@@ -2,7 +2,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.73"
+local SCRIPT_VERSION = "1.75"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -2135,5 +2135,14 @@ _G.KenHubState = {
     humanoid = humanoid,
     humanoidRootPart = humanoidRootPart,
 }
+
+-- [Ken HUB Part 1 global API for other parts]
+_G.PET_TIER_ORDER = PET_TIER_ORDER
+_G.PET_TIER_LABELS = PET_TIER_LABELS
+_G.PET_TIER_RANK = PET_TIER_RANK
+_G.ensurePetSnipeRarities = ensurePetSnipeRarities
+_G.getPlotOwner = getPlotOwner
+_G.getRemainingTime = getRemainingTime
+
 _G.KenHub_CONFIG = CONFIG
 pcall(function() _G.KenHubStatus("Part 1/5 OK") end)
