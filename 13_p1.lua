@@ -2,7 +2,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.81"
+local SCRIPT_VERSION = "1.82"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -443,6 +443,7 @@ local CONFIG = {
             MinTier = "Rare",
             UseMinGeneration = true,
             AcceptAnyGeneration = true,
+            SkipLockedPlots = nil,
             AutoNoclip = true,
             TeleportPasses = 10,
             TeleportSettle = 0.025,
@@ -1360,6 +1361,180 @@ local function getRemainingTime(plot)
 end
 
 --=========================================================
+-- SAB Core v2 (ScriptRot / gumanba - Part 1'de yuklenir, p3'e bagimli DEGIL)
+--=========================================================
+local SAB = {}
+local NOCLIP_CHAR = false
+local NOCLIP_WALLS = false
+local charNoclipConn, charNoclipHB = nil, nil
+local wallBypassThread = nil
+
+local function applyWallNoclipAll()
+    local plots = workspace:FindFirstChild("Plots")
+    if not plots then return end
+    for _, plot in ipairs(plots:GetChildren()) do
+        for _, folderName in ipairs({"InvisibleWalls", "LaserHitbox"}) do
+            local folder = plot:FindFirstChild(folderName)
+            if folder then
+                for _, part in ipairs(folder:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        pcall(function()
+                            part.CanCollide = not NOCLIP_WALLS
+                            if NOCLIP_WALLS then
+                                local mesh = part:FindFirstChild("Mesh")
+                                if mesh then mesh:Destroy() end
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end
+end
+
+function SAB.setWallNoclip(on)
+    NOCLIP_WALLS = on == true
+    applyWallNoclipAll()
+    if NOCLIP_WALLS and not wallBypassThread then
+        wallBypassThread = task.spawn(function()
+            while NOCLIP_WALLS do
+                applyWallNoclipAll()
+                task.wait(0.15)
+            end
+            wallBypassThread = nil
+        end)
+    end
+end
+
+function SAB.setCharacterNoclip(on)
+    NOCLIP_CHAR = on == true
+    if charNoclipConn then pcall(function() charNoclipConn:Disconnect() end) charNoclipConn = nil end
+    if charNoclipHB then pcall(function() charNoclipHB:Disconnect() end) charNoclipHB = nil end
+    if not NOCLIP_CHAR then return end
+
+    charNoclipConn = RunService.Stepped:Connect(function()
+        if not NOCLIP_CHAR then return end
+        local char = player.Character
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+
+    charNoclipHB = RunService.Heartbeat:Connect(function()
+        if not NOCLIP_CHAR then return end
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+    end)
+end
+
+function SAB.enableBypass()
+    SAB.setWallNoclip(true)
+    SAB.setCharacterNoclip(true)
+end
+
+function SAB.disableBypass()
+    SAB.setWallNoclip(false)
+    SAB.setCharacterNoclip(false)
+end
+
+function SAB.bypassPlotWalls(plot)
+    if not plot then return end
+    for _, folderName in ipairs({"InvisibleWalls", "LaserHitbox"}) do
+        local folder = plot:FindFirstChild(folderName)
+        if folder then
+            for _, part in ipairs(folder:GetChildren()) do
+                if part:IsA("BasePart") then
+                    pcall(function()
+                        part.CanCollide = false
+                        local mesh = part:FindFirstChild("Mesh")
+                        if mesh then mesh:Destroy() end
+                    end)
+                end
+            end
+        end
+    end
+end
+
+-- ScriptRot gotoplace / TP To Base: her frame CFrame set (anticheat bypass)
+function SAB.forceTeleport(targetCF, holdSeconds)
+    if not targetCF then return false end
+    SAB.enableBypass()
+    holdSeconds = holdSeconds or 0.65
+    local deadline = tick() + holdSeconds
+    local ok = false
+    while tick() < deadline do
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = targetCF
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            ok = true
+        end
+        RunService.Heartbeat:Wait()
+    end
+    return ok
+end
+
+function SAB.getDeliveryCFrame(plot)
+    if not plot then return nil end
+    local hitbox = plot:FindFirstChild("DeliveryHitbox")
+    if hitbox and hitbox:IsA("BasePart") then
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        local plrY = hrp and hrp.Position.Y or (hitbox.Position.Y + 3)
+        local tppos = Vector3.new(hitbox.Position.X, plrY, hitbox.Position.Z)
+        return CFrame.new(tppos) * (hrp and (hrp.CFrame - hrp.Position) or CFrame.identity)
+    end
+    local podiums = plot:FindFirstChild("AnimalPodiums")
+    local p1 = podiums and podiums:FindFirstChild("1")
+    if p1 then
+        local ok, pivot = pcall(function() return p1:GetPivot() + Vector3.new(0, 3.5, 0) end)
+        if ok and pivot then return pivot end
+    end
+    return nil
+end
+
+function SAB.getPodiumCFrame(podium)
+    if not podium then return nil end
+    local ok, pivot = pcall(function()
+        local base = podium:FindFirstChild("Base")
+        local spawn = base and base:FindFirstChild("Spawn")
+        local attach = spawn and spawn:FindFirstChild("PromptAttachment")
+        if attach then
+            return CFrame.new(attach.WorldPosition + Vector3.new(0, 2.5, 0))
+        end
+        if spawn and spawn:IsA("BasePart") then
+            return spawn.CFrame * CFrame.new(0, 2, 0)
+        end
+        return podium:GetPivot() + Vector3.new(0, 3, 0)
+    end)
+    return ok and pivot or nil
+end
+
+_G.KenHubSAB = SAB
+_G.enableWallBypass = function() SAB.setWallNoclip(true) end
+_G.disableWallBypass = function() SAB.setWallNoclip(false) end
+_G.bypassPlotWalls = function(plot) SAB.bypassPlotWalls(plot) end
+_G.enableNoclip = function()
+    SAB.enableBypass()
+    if CONFIG.Movement and CONFIG.Movement.Noclip then
+        CONFIG.Movement.Noclip.Enabled = true
+    end
+end
+_G.disableNoclip = function()
+    SAB.disableBypass()
+    if CONFIG.Movement and CONFIG.Movement.Noclip then
+        CONFIG.Movement.Noclip.Enabled = false
+    end
+end
+_G.forceTeleport = function(cf, t) return SAB.forceTeleport(cf, t) end
+
+--=========================================================
 -- Pet Snipe System (configurable rarity catalog)
 --=========================================================
 local PET_TIER_ORDER = {
@@ -1792,93 +1967,30 @@ end
 
 local function snipeSecureTeleport(targetCFrame, targetPlot)
     if not targetCFrame then return false end
-
-    if CONFIG.Automation.PetSnipe.AutoNoclip ~= false then
-        if type(_G.enableNoclip) == "function" then pcall(_G.enableNoclip) end
-        if type(_G.enableWallBypass) == "function" then pcall(_G.enableWallBypass) end
-    end
-    if targetPlot and type(_G.bypassPlotWalls) == "function" then
-        pcall(_G.bypassPlotWalls, targetPlot)
-    end
-
-    local char = player.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then pcall(function() hum.PlatformStand = true end) end
-
-    local passes = (CONFIG.Automation.PetSnipe.TeleportPasses) or 10
-    local settle = (CONFIG.Automation.PetSnipe.TeleportSettle) or 0.025
-    for _ = 1, passes do
-        teleportCharacterTo(targetCFrame)
-        task.wait(settle)
-    end
-
-    if hum then
-        task.defer(function()
-            pcall(function() hum.PlatformStand = false end)
-        end)
-    end
-    return true
+    if targetPlot then SAB.bypassPlotWalls(targetPlot) end
+    return SAB.forceTeleport(targetCFrame, 0.7)
 end
 
 local function getPodiumStealCFrame(podium)
-    if not podium then return nil end
-    local prompt = getPodiumStealPrompt(podium)
-    if prompt and prompt.Parent and prompt.Parent:IsA("Attachment") then
-        return CFrame.new(prompt.Parent.WorldPosition + Vector3.new(0, 2.5, 0))
-    end
-    local standPart = getPodiumStandPart(podium)
-    if standPart then
-        return standPart.CFrame * CFrame.new(0, 2, 0)
-    end
-    local ok, pivot = pcall(function() return podium:GetPivot() end)
-    if ok and pivot then
-        return pivot + Vector3.new(0, 3, 0)
-    end
-    return nil
+    return SAB.getPodiumCFrame(podium)
 end
 
 local function refreshHomeCFrame()
     playerPlot = findPlayerPlot() or playerPlot
-    local cf = getBaseDeliveryCFrame(playerPlot)
-    if cf then
-        _G.petSnipeState.homeCFrame = cf
-    end
+    local cf = SAB.getDeliveryCFrame(playerPlot) or getBaseDeliveryCFrame(playerPlot)
+    if cf then _G.petSnipeState.homeCFrame = cf end
     return cf
 end
 
 local function getBaseDeliveryCFrame(plot)
-    if not plot then return nil end
-
-    local hitbox = plot:FindFirstChild("DeliveryHitbox", true)
-    if hitbox and hitbox:IsA("BasePart") then
-        return hitbox.CFrame + Vector3.new(0, 2, 0)
-    end
-
-    local spawn = plot:FindFirstChild("Spawn", true)
-    if spawn then
-        if spawn:IsA("BasePart") then
-            return spawn.CFrame + Vector3.new(0, 3.5, 0)
+    return SAB.getDeliveryCFrame(plot) or (function()
+        if not plot then return nil end
+        local hitbox = plot:FindFirstChild("DeliveryHitbox", true)
+        if hitbox and hitbox:IsA("BasePart") then
+            return hitbox.CFrame + Vector3.new(0, 2, 0)
         end
-        local ok, pivot = pcall(function() return spawn:GetPivot() end)
-        if ok and pivot then
-            return pivot + Vector3.new(0, 3.5, 0)
-        end
-    end
-
-    local podiums = plot:FindFirstChild("AnimalPodiums")
-    local firstPodium = podiums and podiums:FindFirstChild("1")
-    if firstPodium then
-        local ok, pivot = pcall(function() return firstPodium:GetPivot() end)
-        if ok and pivot then
-            return pivot + Vector3.new(0, 3.5, 0)
-        end
-    end
-
-    local ok, pivot = pcall(function() return plot:GetPivot() end)
-    if ok and pivot then
-        return pivot + Vector3.new(0, 5, 0)
-    end
-    return nil
+        return nil
+    end)()
 end
 
 local function isWeldToHrp(weld, hrp)
@@ -2081,78 +2193,65 @@ local function runSnipeRaid(podium, targetPlot, petName, petValue)
     end
 
     refreshHomeCFrame()
-    local homeCF = _G.petSnipeState.homeCFrame
-    local stealCF = getPodiumStealCFrame(podium)
+    SAB.bypassPlotWalls(targetPlot)
+    SAB.enableBypass()
+
+    local homeCF = _G.petSnipeState.homeCFrame or SAB.getDeliveryCFrame(playerPlot)
+    local stealCF = SAB.getPodiumCFrame(podium)
     if not stealCF then
-        warn("[Pet Snipe] Hedef konum alinamadi: " .. tostring(petName))
+        warn("[Pet Snipe] Podium konumu yok")
         return false
     end
 
-    local ownerLabel = getPlotOwner(targetPlot) or (targetPlot and targetPlot.Name) or "?"
-    print(string.format(
-        "[Pet Snipe] >> %s ($%s/s) | %s base | TP -> CAL -> DON",
-        tostring(petName), tostring(petValue or 0), tostring(ownerLabel)
-    ))
-
-    -- 1) Dusman base (kilitli olsa bile duvar bypass)
-    snipeSecureTeleport(stealCF, targetPlot)
-    task.wait(0.12)
+    print(string.format("[Pet Snipe] 1/4 Dusman base TP: %s ($%s/s)", tostring(petName), tostring(petValue or 0)))
+    if not SAB.forceTeleport(stealCF, 0.8) then
+        warn("[Pet Snipe] TP basarisiz (karakter yok?)")
+        return false
+    end
 
     local prompt = getPodiumStealPrompt(podium)
     if not prompt then
-        warn("[Pet Snipe] Steal prompt bulunamadi")
-        if homeCF then snipeSecureTeleport(homeCF, playerPlot) end
+        warn("[Pet Snipe] ProximityPrompt yok")
+        if homeCF then SAB.forceTeleport(homeCF, 0.5) end
         return false
     end
     prepStealPrompt(prompt)
 
-    -- 2) Pet cal
+    print("[Pet Snipe] 2/4 Pet caliniyor...")
     local stolen = false
-    for attempt = 1, 15 do
+    for attempt = 1, 20 do
         if not _G.petSnipeState.enabled then break end
         fireStealPrompt(prompt)
-        task.wait(0.18)
+        task.wait(0.15)
         if isCarryingStolenPet() then
             stolen = true
-            print("[Pet Snipe] Pet alindi (deneme " .. attempt .. ")")
+            print("[Pet Snipe] Pet alindi (" .. attempt .. ")")
             break
         end
     end
-    if not stolen then
-        stolen = waitForCarryingPet(6)
-    end
+    if not stolen then stolen = waitForCarryingPet(5) end
 
-    -- 3) Kendi base'e don (basarisiz olsa bile)
-    homeCF = getBaseDeliveryCFrame(playerPlot) or homeCF
-    if homeCF then
-        print("[Pet Snipe] Kendi base'e donuluyor...")
-        snipeSecureTeleport(homeCF, playerPlot)
-    end
+    homeCF = SAB.getDeliveryCFrame(playerPlot) or homeCF
+    print("[Pet Snipe] 3/4 Kendi base TP (DeliveryHitbox)...")
+    if homeCF then SAB.forceTeleport(homeCF, 0.8) end
 
     if not stolen then
         warn("[Pet Snipe] Pet alinamadi")
         return false
     end
 
-    -- 4) Teslim (ScriptRot: 2.5s bekle + DeliverySteal)
-    local delay = CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5
-    task.wait(delay)
-
+    print("[Pet Snipe] 4/4 DeliverySteal bekleniyor (2.5s)...")
+    task.wait(CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5)
     local remote = getDeliveryStealRemote()
     if remote then
         pcall(function()
-            if remote:IsA("RemoteFunction") then
-                remote:InvokeServer()
-            else
-                remote:FireServer()
-            end
+            if remote:IsA("RemoteFunction") then remote:InvokeServer() else remote:FireServer() end
         end)
         _G.petSnipeState.lastDelivery = tick()
-        print("[Pet Snipe] TESLIM OK - pet kendi base'inde")
+        print("[Pet Snipe] TAMAMLANDI - pet base'de")
         return true
     end
-
-    warn("[Pet Snipe] DeliverySteal remote yok")
+    warn("[Pet Snipe] DeliverySteal remote bulunamadi")
     return false
 end
 
@@ -2246,13 +2345,10 @@ function enablePetSnipe()
     _G.petSnipeState.enabled = true
     _G.petSnipeState.lastDelivery = 0
     CONFIG.Automation.PetSnipe.Enabled = true
-    CONFIG.Automation.PetSnipe.SkipLockedPlots = nil
 
     playerPlot = findPlayerPlot() or playerPlot
     refreshHomeCFrame()
-
-    if type(_G.enableNoclip) == "function" then pcall(_G.enableNoclip) end
-    if type(_G.enableWallBypass) == "function" then pcall(_G.enableWallBypass) end
+    SAB.enableBypass()
 
     getDeliveryStealRemote()
     startSnipePromptWatcher()
@@ -2264,7 +2360,7 @@ function enablePetSnipe()
         pcall(function() task.cancel(_G.petSnipeState.thread) end)
     end
     _G.petSnipeState.thread = task.spawn(petSnipeLoop)
-    print("[Pet Snipe] AKTIF | TP->CAL->DON | Kilitli base DAHIL | Plot: " .. tostring(playerPlot and playerPlot.Name or "?"))
+    print("[Pet Snipe] AKTIF | ScriptRot akisi | Plot: " .. tostring(playerPlot and playerPlot.Name or "?"))
 end
 
 function disablePetSnipe()
@@ -2592,4 +2688,4 @@ _G.applyPetSnipeMinTier = _G.applyPetSnipeMinTier or function() end
 
 _G.KenHub_CONFIG = CONFIG
 pcall(function() _G.KenHubStatus("Part 1/5 OK") end)
--- KenHub_P1_OK
+-- KenHub_SAB_v182
