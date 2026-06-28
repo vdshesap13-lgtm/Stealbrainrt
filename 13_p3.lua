@@ -1,5 +1,25 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.75"
+local SCRIPT_VERSION = "1.76"
+
+-- [Ken HUB v1.76] Global pet tier tables (split-safe, never nil)
+if type(_G.KenHub) ~= "table" then _G.KenHub = {} end
+if type(_G.KenHub.PET_TIER_ORDER) ~= "table" then
+    _G.KenHub.PET_TIER_ORDER = {
+        "common", "uncommon", "rare", "epic", "legendary", "mythic",
+        "secret", "celestial", "divine", "og", "god", "limited", "exclusive",
+    }
+end
+if type(_G.KenHub.PET_TIER_LABELS) ~= "table" then
+    _G.KenHub.PET_TIER_LABELS = {
+        common = "Common", uncommon = "Uncommon", rare = "Rare", epic = "Epic",
+        legendary = "Legendary", mythic = "Mythic", secret = "Secret",
+        celestial = "Celestial", divine = "Divine", og = "OG", god = "God",
+        limited = "Limited", exclusive = "Exclusive",
+    }
+end
+_G.PET_TIER_ORDER = _G.KenHub.PET_TIER_ORDER
+_G.PET_TIER_LABELS = _G.KenHub.PET_TIER_LABELS
+
 local K = _G.KenHubState
 if not K or not K.CONFIG or not K.createSwitch or not K.createSection then
     error("[Ken HUB] Part 1-2 yuklenmedi - Loader.lua kullan")
@@ -410,16 +430,17 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 local jumpSwitch
 local speedSwitch
 
+-- KenHub_P3_BRIDGE_v176
 -- Part 1/2 API bridge
 
 local HttpService = K.HttpService or game:GetService("HttpService")
 local TeleportService = K.TeleportService or game:GetService("TeleportService")
 
-local PET_TIER_ORDER = _G.PET_TIER_ORDER or {
+local PET_TIER_ORDER = (type(_G.KenHub) == "table" and _G.KenHub.PET_TIER_ORDER) or _G.PET_TIER_ORDER or {
     "common", "uncommon", "rare", "epic", "legendary", "mythic",
     "secret", "celestial", "divine", "og", "god", "limited", "exclusive",
 }
-local PET_TIER_LABELS = _G.PET_TIER_LABELS or {
+local PET_TIER_LABELS = (type(_G.KenHub) == "table" and _G.KenHub.PET_TIER_LABELS) or _G.PET_TIER_LABELS or {
     common = "Common", uncommon = "Uncommon", rare = "Rare", epic = "Epic",
     legendary = "Legendary", mythic = "Mythic", secret = "Secret",
     celestial = "Celestial", divine = "Divine", og = "OG", god = "God",
@@ -427,7 +448,7 @@ local PET_TIER_LABELS = _G.PET_TIER_LABELS or {
 }
 local PET_TIER_RANK = _G.PET_TIER_RANK or {}
 if not next(PET_TIER_RANK) then
-    for i, tier in ipairs(PET_TIER_ORDER) do
+    for i, tier in ipairs(type(PET_TIER_ORDER) == "table" and PET_TIER_ORDER or _G.KenHub.PET_TIER_ORDER or {}) do
         PET_TIER_RANK[tier] = i
     end
 end
@@ -1878,14 +1899,15 @@ _G.getServerList = function()
         end
         return HttpService:JSONDecode(response)
     end)
-    return ok and result and result.data and result.data or {}
+    if ok and type(result) == "table" and type(result.data) == "table" then return result.data end
+    return {}
 end
 
 _G.joinBiggestServer = function()
     pcall(function()
         local servers = _G.getServerList()
         local biggest, maxPlayers = nil, 0
-        for _, server in ipairs(servers) do
+        for _, server in ipairs(type(servers) == "table" and servers or {}) do
             if server.id ~= _G.CurrentServerId and server.playing and server.maxPlayers and 
                server.playing < server.maxPlayers and server.playing > maxPlayers then
                 biggest, maxPlayers = server, server.playing
@@ -1904,7 +1926,7 @@ _G.joinSmallestServer = function()
     pcall(function()
         local servers = _G.getServerList()
         local smallest, minPlayers = nil, math.huge
-        for _, server in ipairs(servers) do
+        for _, server in ipairs(type(servers) == "table" and servers or {}) do
             if server.id ~= _G.CurrentServerId and server.playing and server.maxPlayers and 
                server.playing < server.maxPlayers and server.playing < minPlayers then
                 smallest, minPlayers = server, server.playing
@@ -1937,7 +1959,7 @@ _G.toggleServerHop = function(on)
                     if serverList and #serverList > 0 then
                         -- Filter out current server and full servers
                         local validServers = {}
-                        for _, server in ipairs(serverList) do
+                        for _, server in ipairs(type(serverList) == "table" and serverList or {}) do
                             if server.id and server.id ~= _G.CurrentServerId and 
                                server.playing and server.maxPlayers and 
                                server.playing < server.maxPlayers then
@@ -2009,7 +2031,9 @@ createButton(_G.automationSection, "Sadece Mythic+", function() _G.applyPetSnipe
 
 createSectionHeader(_G.automationSection, "Ozel Rarity Secimi")
 _G.petSnipeRaritySwitches = {}
-for _, tier in ipairs(PET_TIER_ORDER or _G.PET_TIER_ORDER or {}) do
+local petTierList = type(PET_TIER_ORDER) == "table" and PET_TIER_ORDER or (type(_G.KenHub) == "table" and _G.KenHub.PET_TIER_ORDER) or _G.PET_TIER_ORDER or {}
+pcall(function()
+for _, tier in ipairs(petTierList) do
     local label = PET_TIER_LABELS[tier] or tier
     local sw = createSwitch(_G.automationSection, label, CONFIG.Automation.PetSnipe.Rarities[tier] == true, function(on)
         ensurePetSnipeRarities()
@@ -2019,6 +2043,7 @@ for _, tier in ipairs(PET_TIER_ORDER or _G.PET_TIER_ORDER or {}) do
     end)
     _G.petSnipeRaritySwitches[tier] = sw
 end
+end)
 
 createSectionHeader(_G.automationSection, "Min Generation Filtresi")
 createSwitch(_G.automationSection, "Min M/s filtresi aktif", CONFIG.Automation.PetSnipe.UseMinGeneration ~= false, function(on)
