@@ -2,7 +2,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.71"
+local SCRIPT_VERSION = "1.72"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -2131,6 +2131,9 @@ _G.KenHubState = {
     enablePetSnipe = enablePetSnipe,
     disablePetSnipe = disablePetSnipe,
     playerPlot = playerPlot,
+    character = character,
+    humanoid = humanoid,
+    humanoidRootPart = humanoidRootPart,
 }
 _G.KenHub_CONFIG = CONFIG
 pcall(function() _G.KenHubStatus("Part 1/5 OK") end)
