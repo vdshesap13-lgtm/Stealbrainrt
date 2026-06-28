@@ -1,7 +1,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.68"
+local SCRIPT_VERSION = "1.69"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -1251,14 +1251,20 @@ local function findPlayerPlot()
     local success, plot = pcall(function()
         local plotsFolder = workspace:FindFirstChild("Plots")
         if not plotsFolder then return nil end
-        for _, plot in ipairs(plotsFolder:GetChildren()) do
-            local plotSign = plot:FindFirstChild("PlotSign")
+        for _, p in ipairs(plotsFolder:GetChildren()) do
+            local yourBase = p:FindFirstChild("YourBase", true)
+            if yourBase and (yourBase:IsA("GuiObject") or yourBase:IsA("BillboardGui")) and yourBase.Enabled then
+                return p
+            end
+        end
+        for _, p in ipairs(plotsFolder:GetChildren()) do
+            local plotSign = p:FindFirstChild("PlotSign")
             if plotSign then
                 local surfaceGui = plotSign:FindFirstChild("SurfaceGui")
                 local frame = surfaceGui and surfaceGui:FindFirstChild("Frame")
                 local textLabel = frame and frame:FindFirstChild("TextLabel")
-                if textLabel and textLabel:IsA("TextLabel") and string.find(textLabel.Text, username) then
-                    return plot
+                if textLabel and textLabel:IsA("TextLabel") and string.find(textLabel.Text, username, 1, true) then
+                    return p
                 end
             end
         end
@@ -1401,10 +1407,20 @@ if CONFIG.Automation.PetSnipe.MinTier and CONFIG.Automation.PetSnipe.MinTier ~= 
 end
 
 local DeliveryStealRemote
-pcall(function()
-    local net = ReplicatedStorage:WaitForChild("Packages", 10):WaitForChild("Net", 10)
-    DeliveryStealRemote = net:FindFirstChild("RE/StealService/DeliverySteal")
-end)
+
+local function getDeliveryStealRemote()
+    if DeliveryStealRemote and DeliveryStealRemote.Parent then
+        return DeliveryStealRemote
+    end
+    pcall(function()
+        local net = ReplicatedStorage:WaitForChild("Packages", 8):WaitForChild("Net", 8)
+        DeliveryStealRemote = net:FindFirstChild("RE/StealService/DeliverySteal")
+            or net:WaitForChild("RE/StealService/DeliverySteal", 5)
+    end)
+    return DeliveryStealRemote
+end
+
+getDeliveryStealRemote()
 
 _G.petSnipeState = {
     enabled = false,
@@ -1429,37 +1445,89 @@ local function parsePetGeneration(text)
 end
 
 local function isOwnPlot(plot)
+    if not plot then return false end
     if plot == playerPlot then return true end
+    local yourBase = plot:FindFirstChild("YourBase", true)
+    if yourBase and (yourBase:IsA("GuiObject") or yourBase:IsA("BillboardGui")) then
+        local enabled = pcall(function() return yourBase.Enabled end) and yourBase.Enabled
+        if enabled then return true end
+    end
     local owner = getPlotOwner(plot)
     if not owner then return false end
     owner = owner:gsub("[''']s%s*$", ""):gsub("%s+$", "")
     return string.lower(owner) == string.lower(username)
 end
 
+local function getPetTierFromOverhead(overhead)
+    if not overhead then return nil, 0 end
+    local rarityLabel = overhead:FindFirstChild("Rarity") or overhead:FindFirstChild("Mutation")
+    if not rarityLabel or not rarityLabel:IsA("TextLabel") then return nil, 0 end
+    local text = string.lower(rarityLabel.Text)
+    for i = #PET_TIER_ORDER, 1, -1 do
+        local tier = PET_TIER_ORDER[i]
+        if string.find(text, tier, 1, true) then
+            return tier, i
+        end
+    end
+    return nil, 0
+end
+
 local function isSnipeTargetPet(overhead)
     if not overhead or not overhead:IsA("BillboardGui") then return false end
     ensurePetSnipeRarities()
-    local rarities = CONFIG.Automation.PetSnipe.Rarities
 
-    local rarityLabel = overhead:FindFirstChild("Rarity") or overhead:FindFirstChild("Mutation")
-    if rarityLabel and rarityLabel:IsA("TextLabel") then
-        local rarityText = string.lower(rarityLabel.Text)
-        for tier, enabled in pairs(rarities) do
-            if enabled and string.find(rarityText, tier, 1, true) then
-                return true
-            end
-        end
+    local tier, tierRank = getPetTierFromOverhead(overhead)
+    if tier and CONFIG.Automation.PetSnipe.Rarities[tier] then
+        return true
     end
 
     if CONFIG.Automation.PetSnipe.UseMinGeneration ~= false then
         local genLabel = overhead:FindFirstChild("Generation")
         if genLabel and genLabel:IsA("TextLabel") then
             local minGen = CONFIG.Automation.PetSnipe.MinGeneration or 100e6
-            return parsePetGeneration(genLabel.Text) >= minGen
+            if parsePetGeneration(genLabel.Text) >= minGen then
+                return true
+            end
         end
     end
 
     return false
+end
+
+local function getPodiumFromOverhead(overhead)
+    local node = overhead and overhead.Parent
+    while node and node ~= workspace do
+        if node.Parent and node.Parent.Name == "AnimalPodiums" then
+            return node
+        end
+        node = node.Parent
+    end
+    return nil
+end
+
+local function getPodiumStealPrompt(podium)
+    if not podium then return nil end
+    local ok, prompt = pcall(function()
+        local base = podium:FindFirstChild("Base")
+        local spawn = base and base:FindFirstChild("Spawn")
+        local attach = spawn and spawn:FindFirstChild("PromptAttachment")
+        return attach and attach:FindFirstChildWhichIsA("ProximityPrompt")
+    end)
+    if ok and prompt then return prompt end
+    for _, obj in ipairs(podium:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            return obj
+        end
+    end
+    return nil
+end
+
+local function getPodiumStandPart(podium)
+    if not podium then return nil end
+    local base = podium:FindFirstChild("Base")
+    local spawn = base and base:FindFirstChild("Spawn")
+    if spawn and spawn:IsA("BasePart") then return spawn end
+    return podium:FindFirstChildWhichIsA("BasePart", true)
 end
 
 local function getPetModelFromOverhead(overhead)
@@ -1509,6 +1577,11 @@ end
 local function getBaseDeliveryCFrame(plot)
     if not plot then return nil end
 
+    local hitbox = plot:FindFirstChild("DeliveryHitbox", true)
+    if hitbox and hitbox:IsA("BasePart") then
+        return hitbox.CFrame + Vector3.new(0, 2, 0)
+    end
+
     local spawn = plot:FindFirstChild("Spawn", true)
     if spawn then
         if spawn:IsA("BasePart") then
@@ -1536,62 +1609,81 @@ local function getBaseDeliveryCFrame(plot)
     return nil
 end
 
-local function fireProximityPrompt(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") then return end
-    pcall(function()
-        if fireproximityprompt then
-            fireproximityprompt(prompt, 0)
-            return
-        end
-        local oldHold = prompt.HoldDuration
+local function fireStealPrompt(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return false end
+    local ok = pcall(function()
         prompt.HoldDuration = 0
-        prompt:InputHoldBegin()
-        task.wait(0.15)
-        prompt:InputHoldEnd()
-        prompt.HoldDuration = oldHold
-    end)
-end
-
-local function findStealPrompt(instance)
-    if not instance then return nil end
-    for _, obj in ipairs(instance:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
-            local action = string.lower(obj.ActionText or "")
-            if action:find("steal") or action:find("grab") or action:find("take") then
-                return obj
-            end
+        prompt.RequiresLineOfSight = false
+        prompt.MaxActivationDistance = math.max(prompt.MaxActivationDistance, 20)
+        if fireproximityprompt then
+            fireproximityprompt(prompt, 1)
+            task.wait(0.08)
+            fireproximityprompt(prompt, 0)
+        else
+            prompt:InputHoldBegin()
+            task.wait(0.25)
+            prompt:InputHoldEnd()
         end
-    end
-    return instance:FindFirstChildWhichIsA("ProximityPrompt", true)
+    end)
+    return ok
 end
 
 local function isCarryingPetModel(model, hrp)
-    if not model or not model:IsA("Model") or not hrp then return false end
-    local root = model:FindFirstChild("RootPart") or model:FindFirstChildWhichIsA("BasePart")
-    if not root then return false end
-    local weld = root:FindFirstChildWhichIsA("WeldConstraint")
-    return weld and weld.Part0 == hrp
+    if not model or not hrp then return false end
+    if model:IsA("Model") then
+        local root = model:FindFirstChild("RootPart") or model:FindFirstChildWhichIsA("BasePart")
+        if root then
+            for _, w in ipairs(root:GetDescendants()) do
+                if w:IsA("WeldConstraint") and w.Part0 == hrp then
+                    return true
+                end
+            end
+            for _, w in ipairs(model:GetDescendants()) do
+                if w:IsA("WeldConstraint") and w.Part0 == hrp then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
-local function waitForCarryingPet(timeout)
+local function isCarryingStolenPet()
     local _, hrp = getCharacterRoot()
     if not hrp then return false end
 
-    local deadline = tick() + timeout
-    while tick() < deadline and _G.petSnipeState.enabled do
-        for _, child in ipairs(workspace:GetChildren()) do
-            if isCarryingPetModel(child, hrp) then
-                return true, child
+    for _, child in ipairs(workspace:GetChildren()) do
+        if child ~= hrp.Parent and isCarryingPetModel(child, hrp) then
+            return true, child
+        end
+    end
+
+    for _, obj in ipairs(hrp:GetDescendants()) do
+        if obj:IsA("WeldConstraint") and obj.Part0 == hrp and obj.Part1 then
+            local parent = obj.Part1.Parent
+            if parent and parent ~= hrp.Parent and parent:IsA("Model") then
+                return true, parent
             end
         end
+    end
+    return false
+end
+
+local function waitForCarryingPet(timeout)
+    local deadline = tick() + timeout
+    while tick() < deadline and _G.petSnipeState.enabled do
+        local carrying, model = isCarryingStolenPet()
+        if carrying then return true, model end
         task.wait(0.05)
     end
     return false
 end
 
 local function deliverStolenPetToBase()
-    if not playerPlot or not playerPlot.Parent then
-        playerPlot = findPlayerPlot()
+    playerPlot = findPlayerPlot() or playerPlot
+    if not playerPlot then
+        warn("[Pet Snipe] Kendi plot bulunamadi.")
+        return false
     end
 
     local deliveryCFrame = getBaseDeliveryCFrame(playerPlot)
@@ -1602,21 +1694,21 @@ local function deliverStolenPetToBase()
     local delay = (CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.DeliveryDelay) or 2.5
     task.wait(delay)
 
-    if DeliveryStealRemote then
-        pcall(function()
-            DeliveryStealRemote:FireServer()
-        end)
+    local remote = getDeliveryStealRemote()
+    if remote then
+        pcall(function() remote:FireServer() end)
         print("[Pet Snipe] Pet base'e teslim edildi.")
-    else
-        warn("[Pet Snipe] DeliverySteal remote bulunamadi.")
+        return true
     end
+    warn("[Pet Snipe] DeliverySteal remote bulunamadi.")
+    return false
 end
 
 local function scanBestSnipeTarget()
     local plotsFolder = workspace:FindFirstChild("Plots")
     if not plotsFolder then return nil end
 
-    local bestValue, bestPet, bestPlot, bestName = -1, nil, nil, nil
+    local bestScore, bestPodium, bestPlot, bestName, bestValue, bestTier = -1, nil, nil, nil, 0, 0
 
     for _, plot in ipairs(plotsFolder:GetChildren()) do
         if not isOwnPlot(plot) then
@@ -1624,14 +1716,19 @@ local function scanBestSnipeTarget()
                 if obj.Name == "AnimalOverhead" and obj:IsA("BillboardGui") and isSnipeTargetPet(obj) then
                     local genLabel = obj:FindFirstChild("Generation")
                     local value = genLabel and parsePetGeneration(genLabel.Text) or 0
-                    if value > bestValue then
-                        local petModel = getPetModelFromOverhead(obj)
-                        if petModel then
-                            bestValue = value
-                            bestPet = petModel
+                    local _, tierRank = getPetTierFromOverhead(obj)
+                    local podium = getPodiumFromOverhead(obj)
+                    local prompt = getPodiumStealPrompt(podium)
+                    if podium and prompt then
+                        local score = value + (tierRank * 1e12)
+                        if score > bestScore then
+                            bestScore = score
+                            bestPodium = podium
                             bestPlot = plot
+                            bestValue = value
+                            bestTier = tierRank
                             local nameLabel = obj:FindFirstChild("DisplayName")
-                            bestName = nameLabel and nameLabel.Text or petModel.Name
+                            bestName = nameLabel and nameLabel.Text or podium.Name
                         end
                     end
                 end
@@ -1639,32 +1736,34 @@ local function scanBestSnipeTarget()
         end
     end
 
-    return bestPet, bestPlot, bestValue, bestName
+    return bestPodium, bestPlot, bestValue, bestName
 end
 
-local function attemptPetSteal(petModel, petName)
+local function attemptPetSteal(podium, petName)
     local _, hrp = getCharacterRoot()
-    if not hrp or not petModel or not petModel.Parent then return false end
+    if not hrp or not podium or not podium.Parent then return false end
 
-    local targetPart = petModel:IsA("BasePart") and petModel or petModel:FindFirstChildWhichIsA("BasePart", true)
-    if not targetPart then return false end
-
-    teleportCharacterTo(targetPart.CFrame * CFrame.new(0, 0, 4))
-    task.wait(0.35)
-
-    local prompt = findStealPrompt(petModel)
-    if not prompt and petModel.Parent then
-        prompt = findStealPrompt(petModel.Parent)
-    end
-
-    if prompt then
-        fireProximityPrompt(prompt)
-    else
-        warn("[Pet Snipe] Steal prompt bulunamadi: " .. tostring(petName))
+    local prompt = getPodiumStealPrompt(podium)
+    if not prompt then
+        warn("[Pet Snipe] Podium prompt yok: " .. tostring(petName))
         return false
     end
 
-    return waitForCarryingPet(12)
+    local standPart = getPodiumStandPart(podium)
+    if standPart then
+        teleportCharacterTo(standPart.CFrame * CFrame.new(0, 0, 3))
+    end
+    task.wait(0.4)
+
+    for _ = 1, 5 do
+        fireStealPrompt(prompt)
+        task.wait(0.35)
+        if isCarryingStolenPet() then
+            return true
+        end
+    end
+
+    return waitForCarryingPet(8)
 end
 
 local function onWorkspacePetAttached(child)
@@ -1674,8 +1773,8 @@ local function onWorkspacePetAttached(child)
         local _, hrp = getCharacterRoot()
         if not hrp then return end
 
-        local function tryDeliver(model)
-            if isCarryingPetModel(model, hrp) then
+        local function tryDeliver()
+            if isCarryingStolenPet() then
                 _G.petSnipeState.busy = true
                 deliverStolenPetToBase()
                 task.wait((CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.StealCooldown) or 4)
@@ -1685,31 +1784,40 @@ local function onWorkspacePetAttached(child)
             return false
         end
 
-        if tryDeliver(child) then return end
+        if tryDeliver() then return end
 
-        for _ = 1, 20 do
-            if tryDeliver(child) then break end
-            task.wait(0.05)
+        for _ = 1, 30 do
+            if tryDeliver() then break end
+            task.wait(0.1)
         end
     end)
 end
 
 local function petSnipeLoop()
+    local noTargetTicks = 0
     while _G.petSnipeState.enabled do
         if not _G.petSnipeState.busy then
-            local petModel, _, value, petName = scanBestSnipeTarget()
-            if petModel then
+            local podium, targetPlot, value, petName = scanBestSnipeTarget()
+            if podium then
+                noTargetTicks = 0
                 _G.petSnipeState.busy = true
-                print(string.format("[Pet Snipe] Hedef: %s ($%s/s)", tostring(petName), tostring(value)))
+                print(string.format("[Pet Snipe] Hedef: %s ($%s/s) plot=%s", tostring(petName), tostring(value), tostring(targetPlot and targetPlot.Name)))
                 local ok, stolen = pcall(function()
-                    return attemptPetSteal(petModel, petName)
+                    return attemptPetSteal(podium, petName)
                 end)
-                if not ok then
-                    warn("[Pet Snipe] Calma denemesi basarisiz.")
-                elseif stolen then
+                if ok and stolen then
+                    deliverStolenPetToBase()
                     task.wait((CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.StealCooldown) or 4)
+                elseif not ok then
+                    warn("[Pet Snipe] Calma hatasi: " .. tostring(stolen))
                 end
                 _G.petSnipeState.busy = false
+            else
+                noTargetTicks = noTargetTicks + 1
+                if noTargetTicks == 5 then
+                    print("[Pet Snipe] Hedef araniyor... (katalog/min M/s kontrol et)")
+                    noTargetTicks = 0
+                end
             end
         end
         task.wait((CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.ScanInterval) or 1.5)
@@ -1720,6 +1828,8 @@ function enablePetSnipe()
     if _G.petSnipeState.enabled then return end
     _G.petSnipeState.enabled = true
     CONFIG.Automation.PetSnipe.Enabled = true
+    playerPlot = findPlayerPlot() or playerPlot
+    getDeliveryStealRemote()
 
     table.insert(_G.petSnipeState.connections, workspace.ChildAdded:Connect(onWorkspacePetAttached))
 
