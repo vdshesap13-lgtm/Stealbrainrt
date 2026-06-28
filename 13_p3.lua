@@ -1,5 +1,5 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.79"
+local SCRIPT_VERSION = "1.80"
 
 -- [Ken HUB v1.76] Global pet tier tables (split-safe, never nil)
 if type(_G.KenHub) ~= "table" then _G.KenHub = {} end
@@ -430,7 +430,7 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 local jumpSwitch
 local speedSwitch
 
--- KenHub_P3_BRIDGE_v179
+-- KenHub_P3_BRIDGE_v180
 -- Part 1/2 API bridge
 
 local HttpService = K.HttpService or game:GetService("HttpService")
@@ -1427,6 +1427,7 @@ end)
 local NOCLIP_ENABLED = false
 local WALL_BYPASS_ENABLED = false
 local noclipConn = nil
+local noclipHeartbeat = nil
 local wallBypassConns = {}
 
 local WALL_FOLDERS = {"InvisibleWalls", "LaserHitbox", "Barriers", "Walls", "Blockers"}
@@ -1438,8 +1439,35 @@ local function setPlotWallCollision(plot, passThrough)
         if folder then
             for _, obj in ipairs(folder:GetDescendants()) do
                 if obj:IsA("BasePart") then
-                    pcall(function() obj.CanCollide = not passThrough end)
+                    pcall(function()
+                        if passThrough then
+                            obj.CanCollide = false
+                            obj.CanTouch = false
+                            local mesh = obj:FindFirstChildOfClass("SpecialMesh") or obj:FindFirstChild("Mesh")
+                            if mesh then mesh:Destroy() end
+                        else
+                            obj.CanCollide = true
+                            obj.CanTouch = true
+                        end
+                    end)
                 end
+            end
+        end
+    end
+    local purchases = plot:FindFirstChild("Purchases")
+    local plotBlock = purchases and purchases:FindFirstChild("PlotBlock")
+    if plotBlock then
+        for _, obj in ipairs(plotBlock:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                pcall(function()
+                    if passThrough then
+                        obj.CanCollide = false
+                        obj.CanTouch = false
+                    else
+                        obj.CanCollide = true
+                        obj.CanTouch = true
+                    end
+                end)
             end
         end
     end
@@ -1490,7 +1518,10 @@ local function startWallBypassWatcher()
             while parent and parent ~= plots do
                 for _, name in ipairs(WALL_FOLDERS) do
                     if parent.Name == name then
-                        pcall(function() obj.CanCollide = false end)
+                        pcall(function()
+                            obj.CanCollide = false
+                            obj.CanTouch = false
+                        end)
                         return
                     end
                 end
@@ -1500,25 +1531,46 @@ local function startWallBypassWatcher()
     end))
 end
 
+local function applyCharacterNoclip(char)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.CanTouch = false
+        end
+    end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end
+end
+
 local function enableNoclip()
     if NOCLIP_ENABLED then return end
     NOCLIP_ENABLED = true
     CONFIG.Movement.Noclip = CONFIG.Movement.Noclip or {}
     CONFIG.Movement.Noclip.Enabled = true
 
-    if noclipConn then
-        pcall(function() noclipConn:Disconnect() end)
-    end
-    noclipConn = RunService.Stepped:Connect(function()
+    if noclipConn then pcall(function() noclipConn:Disconnect() end) end
+    if noclipHeartbeat then pcall(function() noclipHeartbeat:Disconnect() end) end
+
+    noclipConn = RunService.PreSimulation:Connect(function()
+        if not NOCLIP_ENABLED then return end
+        applyCharacterNoclip(player.Character)
+    end)
+
+    noclipHeartbeat = RunService.Heartbeat:Connect(function()
         if not NOCLIP_ENABLED then return end
         local char = player.Character
-        if not char then return end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.CanCollide then
-                part.CanCollide = false
-            end
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
         end
     end)
+
+    applyCharacterNoclip(player.Character)
 
     if CONFIG.Movement.Noclip.WallBypass ~= false then
         _G.enableWallBypass()
@@ -1535,13 +1587,24 @@ local function disableNoclip()
         pcall(function() noclipConn:Disconnect() end)
         noclipConn = nil
     end
+    if noclipHeartbeat then
+        pcall(function() noclipHeartbeat:Disconnect() end)
+        noclipHeartbeat = nil
+    end
 
     local char = player.Character
     if char then
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                pcall(function() part.CanCollide = true end)
+                pcall(function()
+                    part.CanCollide = true
+                    part.CanTouch = true
+                end)
             end
+        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            pcall(function() hrp.CanCollide = false end)
         end
     end
 
@@ -2172,7 +2235,7 @@ createSectionHeader(_G.automationSection, "Pet Snipe")
 local petSnipeInfo = Instance.new("TextLabel")
 petSnipeInfo.Size = UDim2.new(1, -20, 0, 44)
 petSnipeInfo.BackgroundTransparency = 1
-petSnipeInfo.Text = "Secili rarity ve min M/s hedeflerini otomatik calip base'e getirir."
+petSnipeInfo.Text = "Katalogdaki pet bulununca hedef base'e TP -> cal -> kendi base'e TP -> teslim."
 petSnipeInfo.TextColor3 = CONFIG.Colors.SubText
 petSnipeInfo.TextSize = 13
 petSnipeInfo.Font = Enum.Font.Gotham
