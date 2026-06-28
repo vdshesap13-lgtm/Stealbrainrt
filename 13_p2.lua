@@ -1,6 +1,6 @@
 -- Ken HUB Part 2/5 - UI Shell
 -- Ken HUB Part 2/5 - UI Shell
-local SCRIPT_VERSION = "1.73"
+local SCRIPT_VERSION = "1.75"
 local K = _G.KenHubState
 if not K or not K.CONFIG then
     error("[Ken HUB] Part 1 yuklenmedi - Loader.lua kullan")
@@ -1093,7 +1093,7 @@ local function enablePlotESP()
     end)
     if not success then
         warn("Failed to enable Plot ESP")
-        Plot_G.ESP_Enabled = false
+        _G.PlotESP_Enabled = false
     end
 end
 
@@ -1216,7 +1216,7 @@ local function enablePlotTimeESP()
     end)
     if not success then
         warn("Failed to enable Plot Time ESP")
-        PlotTime_G.ESP_Enabled = false
+        _G.PlotTimeESP_Enabled = false
     end
 end
 
@@ -1680,5 +1680,8 @@ K.enableESP = enableESP
 K.disableESP = disableESP
 K.enablePlotESP = enablePlotESP
 K.disablePlotESP = disablePlotESP
+
+_G.KenHub_createBillboardGui = createBillboardGui
+_G.KenHub_updateBillboard = updateBillboard
 _G.KenHub_createSwitch = createSwitch
 pcall(function() _G.KenHubStatus("Part 2/5 OK") end)
