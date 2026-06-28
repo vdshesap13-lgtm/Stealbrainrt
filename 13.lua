@@ -3567,7 +3567,7 @@ _G.desyncSection = createSection("Desync")
 createTabButton("Home", "Home", "rbxassetid://6031265976")
 createTabButton("Movement", "Movement", "rbxassetid://6035047409")
 createTabButton("Visual", "Visual", "rbxassetid://6031280882")
-createTabButton("Automation", "Auto", "rbxassetid://6031280882")
+createTabButton("Automation", "Automation", "rbxassetid://6031280882")
 createTabButton("Patched", "Patched", "rbxassetid://6031289451")
 createTabButton("Server", "Server", "rbxassetid://6031068421")
 createTabButton("Desync", "Desync", "rbxassetid://6031094677")
@@ -5624,13 +5624,30 @@ local function disablePlotTimeESP()
         warn("Failed to disable Plot Time ESP")
     end
 end
+
+-- Desync section UI
+createSectionHeader(_G.desyncSection, "Desync Controls")
+_G.mobileDesyncEnabled = false
+createSwitch(_G.desyncSection, "Desync (Mobile)", false, function(on)
+    pcall(function()
+        _G.mobileDesyncEnabled = on
+        if on then enableMobileDesync() else disableMobileDesync() end
+    end)
+end)
+
 -- Plot Time ESP varsayilan kapali (startup'ta agir yuk bindirmesin)
 -- Acmak icin Visual/Settings'ten toggle kullan
 
 local isTimeSizeDragging = false
-timeSizeButton.MouseButton1Down:Connect(function()
-    isTimeSizeDragging = true
-end)
+if timeSizeButton and timeSizeButton.MouseButton1Down then
+    pcall(function()
+        timeSizeButton.MouseButton1Down:Connect(function()
+            isTimeSizeDragging = true
+        end)
+    end)
+else
+    warn("[Ken HUB] timeSizeButton bulunamadi - slider devre disi")
+end
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -5927,6 +5944,24 @@ end)
 
 --=========================================================
 
+
+-- Panel baslangic (block B hata verse bile icerik gorunsun)
+pcall(function()
+    activeSection = "Home"
+    if sections and sections.Home then
+        sections.Home.Visible = true
+    end
+    for name, frame in pairs(sections or {}) do
+        if name ~= "Home" and frame then
+            frame.Visible = false
+        end
+    end
+    local homeBtn = sidebar and sidebar:FindFirstChild("HomeButton")
+    if homeBtn then
+        homeBtn.BackgroundColor3 = CONFIG.Colors.Accent
+    end
+end)
+
 -- [KenHUB split export for part 2 + block 3]
 _G.KenHub_CONFIG = CONFIG
 _G.KenHubBundle = {
@@ -5975,6 +6010,8 @@ _G.KenHubBundle = {
     playerColorButton = playerColorButton,
     plotColorButton = plotColorButton,
     disablePetSnipe = disablePetSnipe,
+    enablePetSnipe = enablePetSnipe,
+    petSnipeSwitch = petSnipeSwitch,
     setInvisibility = setInvisibility,
     findPlayerPlot = findPlayerPlot,
     getPlayerPlot = function() return playerPlot end,
@@ -5987,6 +6024,10 @@ end -- KenHUB register block 2
 
 do -- KenHUB register block 3
 local B = _G.KenHubBundle
+if not B or not B.mainFrame or not B.createSwitch then
+    _G.KenHubError("Ken HUB block B: Part A export eksik")
+    return
+end
 local CONFIG = B.CONFIG
 local player = B.player
 local username = B.username
@@ -5994,6 +6035,7 @@ local createSwitch = B.createSwitch
 local createSectionHeader = B.createSectionHeader
 local createNumberInput = B.createNumberInput
 local mainFrame = B.mainFrame
+local screenGui = B.screenGui
 local settingsContent = B.settingsContent
 local settingsFrame = B.settingsFrame
 local settingsCloseBtn = B.settingsCloseBtn
@@ -6031,6 +6073,8 @@ local timeSizeButton = B.timeSizeButton
 local playerColorButton = B.playerColorButton
 local plotColorButton = B.plotColorButton
 local disablePetSnipe = B.disablePetSnipe
+local enablePetSnipe = B.enablePetSnipe
+local petSnipeSwitch = B.petSnipeSwitch
 local setInvisibility = B.setInvisibility
 local findPlayerPlot = B.findPlayerPlot
 local RunService = game:GetService("RunService")
@@ -6046,25 +6090,6 @@ local function KenNotify(title, text)
         StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 6 })
     end)
 end
-
---=========================================================
--- Desync Section
---=========================================================
-createSectionHeader(_G.desyncSection, "Desync Controls")
-
--- Mobile Desync Toggle
-_G.mobileDesyncEnabled = false
-local mobileDesyncSwitch = createSwitch(_G.desyncSection, "Desync (Mobile)", false, function(on)
-    pcall(function()
-        _G.mobileDesyncEnabled = on
-        if on then
-            enableMobileDesync()
-        else
-            disableMobileDesync()
-        end
-        -- Don't save settings for mobile desync (fast flag can't be disabled)
-    end)
-end)
 
 createSectionHeader(settingsContent, "Movement Settings")
 
@@ -6490,9 +6515,14 @@ local function setMainGuiVisible(visible)
     if mainFrame then
         mainFrame.Visible = visible
     end
+    if screenGui then
+        screenGui.Enabled = visible
+    end
     if not visible and settingsFrame then
         settingsFrame.Visible = false
     end
+    if sidebar then sidebar.Visible = visible and not isMinimized end
+    if contentArea then contentArea.Visible = visible and not isMinimized end
     if visible then
         mainFrame.Size = getMainPanelSize()
         if _G.isMobile or _G.isDelta then
@@ -6528,74 +6558,23 @@ minimizeBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    local success, _ = pcall(function()
-        -- Disable all features safely
-        if playerESPSwitch and playerESPSwitch.set then playerESPSwitch.set(false) end
-        if plotESPSwitch and plotESPSwitch.set then plotESPSwitch.set(false) end
-        if serverHopSwitch and serverHopSwitch.set then serverHopSwitch.set(false) end
-        if jumpSwitch and jumpSwitch.set then jumpSwitch.set(false) end
-        if speedSwitch and speedSwitch.set then speedSwitch.set(false) end
-        if invisibilitySwitch and invisibilitySwitch.set then invisibilitySwitch.set(false) end
-        if unhittableSwitchInstance and unhittableSwitchInstance.set then unhittableSwitchInstance.set(false) end
-        if resizeSwitchInstance and resizeSwitchInstance.set then resizeSwitchInstance.set(false) end
-        if flingSwitchInstance and flingSwitchInstance.set then flingSwitchInstance.set(false) end
-        
-        -- Disable movement features
-        if CONFIG.Movement.Helicopter and CONFIG.Movement.Helicopter.Enabled then
-            pcall(function() disableHelicopter() end)
-        end
-        if CONFIG.Movement.GrappleFlight and CONFIG.Movement.GrappleFlight.Enabled then
-            pcall(function() disableGrappleFlight() end)
-        end
-        if CONFIG.Movement.InfiniteJump and CONFIG.Movement.InfiniteJump.Enabled then
-            pcall(function() disableInfiniteJump() end)
-        end
-        if CONFIG.Movement.Rise and CONFIG.Movement.Rise.Enabled then
-            pcall(function() disablePlatform() end)
-        end
-        if CONFIG.Movement.Float and CONFIG.Movement.Float.Enabled then
-            disableFloat()
-        end
-        
-        -- Disable ESP features
-        if _G.ESP_Enabled then
-            disableESP()
-        end
-        if _G.PlotESP_Enabled then
-            disablePlotESP()
-        end
-        if _G.PlotTimeESP_Enabled then
-            disablePlotTimeESP()
-        end
-        if CONFIG.ESP.BrainrotESP and CONFIG.ESP.BrainrotESP.Enabled then
-            disableBrainrotESP()
-        end
-        
-        -- Disable Desync features
-        if _G.mobileDesyncEnabled then
-            disableMobileDesync()
-        end
-        if CONFIG.Movement.RagdollDesync and CONFIG.Movement.RagdollDesync.Enabled then
-            (_G.disableRagdollDesync or function() end)()
-        end
-        
-        -- Paneli kapat (script calismaya devam eder, RightShift ile geri acilir)
-        setMainGuiVisible(false)
-        pcall(function()
-            game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "Ken HUB",
-                Text = (_G.isDelta or _G.isMobile)
-                    and "Panel gizlendi. KH butonuna dokun."
-                    or "Panel gizlendi. RightShift veya Insert ile ac.",
-                Duration = 4,
-            })
-        end)
+local function hideKenHubPanel()
+    setMainGuiVisible(false)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Ken HUB",
+            Text = (_G.isDelta or _G.isMobile) and "Panel gizlendi. KH butonuna dokun." or "Panel gizlendi. RightShift veya Insert ile ac.",
+            Duration = 3,
+        })
     end)
-    if not success then
-        warn("Failed to close UI")
-    end
-end)
+end
+
+local function bindClose(btn)
+    if not btn then return end
+    pcall(function() btn.MouseButton1Click:Connect(hideKenHubPanel) end)
+    pcall(function() btn.TouchTap:Connect(hideKenHubPanel) end)
+end
+bindClose(closeBtn)
 
 --=========================================================
 -- Character Respawn Handling
