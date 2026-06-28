@@ -1,5 +1,5 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.76"
+local SCRIPT_VERSION = "1.78"
 
 -- [Ken HUB v1.76] Global pet tier tables (split-safe, never nil)
 if type(_G.KenHub) ~= "table" then _G.KenHub = {} end
@@ -430,7 +430,7 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 local jumpSwitch
 local speedSwitch
 
--- KenHub_P3_BRIDGE_v176
+-- KenHub_P3_BRIDGE_v178
 -- Part 1/2 API bridge
 
 local HttpService = K.HttpService or game:GetService("HttpService")
@@ -2018,7 +2018,13 @@ petSnipeInfo.Parent = _G.automationSection
 local petSnipeSwitch = createSwitch(_G.automationSection, "Pet Snipe", CONFIG.Automation.PetSnipe.Enabled, function(on)
     CONFIG.Automation.PetSnipe.Enabled = on
     _G.saveSettings()
-    if on then enablePetSnipe() else disablePetSnipe() end
+    local startFn = enablePetSnipe or _G.enablePetSnipe
+    local stopFn = disablePetSnipe or _G.disablePetSnipe
+    if on then
+        if type(startFn) == "function" then startFn() else warn("[Pet Snipe] enablePetSnipe bulunamadi") end
+    else
+        if type(stopFn) == "function" then stopFn() end
+    end
 end)
 _G.petSnipeSwitch = petSnipeSwitch
 
