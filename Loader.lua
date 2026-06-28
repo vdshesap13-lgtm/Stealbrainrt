@@ -12,7 +12,7 @@ local PARTS = {
     { "Part 4/5", BASE .. "13_p4.lua" },
     { "Part 5/5", BASE .. "13_p5.lua" },
 }
-local MIN_VERSION = "1.73"
+local MIN_VERSION = "1.75"
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
