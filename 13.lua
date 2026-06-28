@@ -5627,6 +5627,42 @@ end
 -- Plot Time ESP varsayilan kapali (startup'ta agir yuk bindirmesin)
 -- Acmak icin Visual/Settings'ten toggle kullan
 
+local isTimeSizeDragging = false
+timeSizeButton.MouseButton1Down:Connect(function()
+    isTimeSizeDragging = true
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isTimeSizeDragging = false
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if isTimeSizeDragging then
+        local mouse = player:GetMouse()
+        local sliderPos = timeSizeBar.AbsolutePosition.X
+        local sliderWidth = timeSizeBar.AbsoluteSize.X
+        local mouseX = mouse.X
+        local relativeX = math.clamp((mouseX - sliderPos) / sliderWidth, 0, 1)
+        local newSize = math.floor(16 + relativeX * (48 - 16))
+
+        if newSize ~= CONFIG.ESP.PlotESP.TimeTextSize then
+            CONFIG.ESP.PlotESP.TimeTextSize = newSize
+            timeSizeLabel.Text = "Plot Time Text Size: " .. newSize
+            timeSizeFill.Size = UDim2.new(relativeX, 0, 1, 0)
+            timeSizeButton.Position = UDim2.new(relativeX, -10, 0, 0)
+
+            if _G.PlotTimeESP_Enabled then
+                disablePlotTimeESP()
+                enablePlotTimeESP()
+            end
+
+            _G.saveSettings()
+        end
+    end
+end)
+
 --=========================================================
 -- Brainrot ESP System
 --=========================================================
@@ -5932,6 +5968,12 @@ _G.KenHubBundle = {
     disableFloat = disableFloat,
     disablePlatform = disablePlatform,
     enablePlatform = enablePlatform,
+    enablePlotTimeESP = enablePlotTimeESP,
+    timeSizeLabel = timeSizeLabel,
+    timeSizeFill = timeSizeFill,
+    timeSizeButton = timeSizeButton,
+    playerColorButton = playerColorButton,
+    plotColorButton = plotColorButton,
     disablePetSnipe = disablePetSnipe,
     setInvisibility = setInvisibility,
     findPlayerPlot = findPlayerPlot,
@@ -5982,6 +6024,12 @@ local disableInfiniteJump = B.disableInfiniteJump
 local disableFloat = B.disableFloat
 local disablePlatform = B.disablePlatform
 local enablePlatform = B.enablePlatform
+local enablePlotTimeESP = B.enablePlotTimeESP
+local timeSizeLabel = B.timeSizeLabel
+local timeSizeFill = B.timeSizeFill
+local timeSizeButton = B.timeSizeButton
+local playerColorButton = B.playerColorButton
+local plotColorButton = B.plotColorButton
 local disablePetSnipe = B.disablePetSnipe
 local setInvisibility = B.setInvisibility
 local findPlayerPlot = B.findPlayerPlot
@@ -6017,47 +6065,6 @@ local mobileDesyncSwitch = createSwitch(_G.desyncSection, "Desync (Mobile)", fal
         -- Don't save settings for mobile desync (fast flag can't be disabled)
     end)
 end)
-
-
-
-
-local isDragging = false
-timeSizeButton.MouseButton1Down:Connect(function()
-    isDragging = true
-end)
-
-game:GetService("UserInputService").InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        isDragging = false
-    end
-end)
-
-game:GetService("RunService").Heartbeat:Connect(function()
-    if isDragging then
-        local mouse = game:GetService("Players").LocalPlayer:GetMouse()
-        local sliderPos = timeSizeBar.AbsolutePosition.X
-        local sliderWidth = timeSizeBar.AbsoluteSize.X
-        local mouseX = mouse.X
-        local relativeX = math.clamp((mouseX - sliderPos) / sliderWidth, 0, 1)
-        local newSize = math.floor(16 + relativeX * (48 - 16))
-        
-        if newSize ~= CONFIG.ESP.PlotESP.TimeTextSize then
-            CONFIG.ESP.PlotESP.TimeTextSize = newSize
-            timeSizeLabel.Text = "Plot Time Text Size: " .. newSize
-            timeSizeFill.Size = UDim2.new(relativeX, 0, 1, 0)
-            timeSizeButton.Position = UDim2.new(relativeX, -10, 0, 0)
-            
-            -- Recreate PlotTimeESP billboards with new text size
-            if _G.PlotTimeESP_Enabled then
-                disablePlotTimeESP() -- Disable to clear existing billboards
-                enablePlotTimeESP() -- Re-enable to recreate with new text size
-            end
-            
-            _G.saveSettings()
-        end
-    end
-end)
-
 
 createSectionHeader(settingsContent, "Movement Settings")
 
@@ -6182,7 +6189,7 @@ resetSettingsButton.MouseButton1Click:Connect(function()
         timeSizeButton.Position = UDim2.new(relativeX, -10, 0, 0)
         
         -- Update existing ESP
-        for plr, data in pairs(ESP_Data) do
+        for plr, data in pairs(_G.ESP_Data) do
             if typeof(plr) == "Instance" and data.highlight then
                 data.highlight.OutlineColor = CONFIG.ESP.PlayerESP.HighlightColor
             end
