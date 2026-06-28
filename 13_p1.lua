@@ -2,7 +2,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.78"
+local SCRIPT_VERSION = "1.79"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -442,7 +442,10 @@ local CONFIG = {
             Enabled = false,
             MinTier = "Rare",
             UseMinGeneration = true,
-            MinGeneration = 100e6,
+            AcceptAnyGeneration = true,
+            SkipLockedPlots = true,
+            AutoNoclip = true,
+            MinGeneration = 10e6,
             DeliveryDelay = 2.5,
             ScanInterval = 1.5,
             StealCooldown = 4,
@@ -497,6 +500,10 @@ local CONFIG = {
             JumpPower = 42, -- Jump velocity
             Cooldown = 0.2, -- Cooldown between jumps
         },
+        Noclip = {
+            Enabled = false,
+            WallBypass = true,
+        },
     },
     DiscordLink = "https://discord.gg/MxtDGmvkCd",
 }
@@ -523,6 +530,7 @@ _G.saveSettings = function()
                 Helicopter = CONFIG.Movement.Helicopter,
                 GrappleFlight = CONFIG.Movement.GrappleFlight,
                 InfiniteJump = CONFIG.Movement.InfiniteJump,
+                Noclip = CONFIG.Movement.Noclip,
             },
             Automation = CONFIG.Automation,
             UI = CONFIG.UI,
@@ -736,7 +744,7 @@ local function validateCONFIG()
     if not CONFIG.Automation then CONFIG.Automation = {} end
     if not CONFIG.Automation.PetSnipe then CONFIG.Automation.PetSnipe = {} end
     CONFIG.Automation.PetSnipe.Enabled = CONFIG.Automation.PetSnipe.Enabled or false
-    CONFIG.Automation.PetSnipe.MinGeneration = CONFIG.Automation.PetSnipe.MinGeneration or 100e6
+    CONFIG.Automation.PetSnipe.MinGeneration = CONFIG.Automation.PetSnipe.MinGeneration or 10e6
     CONFIG.Automation.PetSnipe.DeliveryDelay = CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5
     CONFIG.Automation.PetSnipe.ScanInterval = CONFIG.Automation.PetSnipe.ScanInterval or 1.5
     CONFIG.Automation.PetSnipe.StealCooldown = CONFIG.Automation.PetSnipe.StealCooldown or 4
@@ -779,6 +787,10 @@ local function validateCONFIG()
     CONFIG.Movement.InfiniteJump.Enabled = CONFIG.Movement.InfiniteJump.Enabled or false
     CONFIG.Movement.InfiniteJump.JumpPower = CONFIG.Movement.InfiniteJump.JumpPower or 42
     CONFIG.Movement.InfiniteJump.Cooldown = CONFIG.Movement.InfiniteJump.Cooldown or 0.2
+
+    if not CONFIG.Movement.Noclip then CONFIG.Movement.Noclip = {} end
+    CONFIG.Movement.Noclip.Enabled = CONFIG.Movement.Noclip.Enabled or false
+    CONFIG.Movement.Noclip.WallBypass = CONFIG.Movement.Noclip.WallBypass ~= false
     
     if not CONFIG.Movement.Rise then CONFIG.Movement.Rise = {} end
     CONFIG.Movement.Rise.Enabled = CONFIG.Movement.Rise.Enabled or false
@@ -1617,7 +1629,35 @@ local function isOwnPlot(plot)
     local owner = getPlotOwner(plot)
     if not owner then return false end
     owner = owner:gsub("[''']s%s*$", ""):gsub("%s+$", "")
-    return string.lower(owner) == string.lower(username)
+    local lowerOwner = string.lower(owner)
+    if lowerOwner == string.lower(username) then return true end
+    if player.DisplayName and lowerOwner == string.lower(player.DisplayName) then return true end
+    return false
+end
+
+local function isPlotLocked(plot)
+    if not plot then return true end
+    local timeText = getRemainingTime(plot)
+    if not timeText or timeText == "" then return false end
+    timeText = string.lower(tostring(timeText))
+    if timeText:find("unavailable") or timeText:find("error") then return false end
+    if timeText:find("unlock") or timeText:find("open") or timeText:find("0s") or timeText:find("0:00") then
+        return false
+    end
+    local sec = timeText:match("(%d+)%s*s")
+    if sec and tonumber(sec) > 0 then return true end
+    local minPart, secPart = timeText:match("(%d+):(%d+)")
+    if minPart and tonumber(minPart) > 0 then return true end
+    if secPart and tonumber(secPart) > 0 then return true end
+    return false
+end
+
+local function isPlotAccessible(plot)
+    if isOwnPlot(plot) then return false end
+    if CONFIG.Automation.PetSnipe.SkipLockedPlots ~= false and isPlotLocked(plot) then
+        return false
+    end
+    return true
 end
 
 local function getPetTierFromOverhead(overhead)
@@ -1649,21 +1689,18 @@ end
 
 local function podiumHasActivePet(overhead)
     if not overhead then return false end
+    local nameLabel = overhead:FindFirstChild("DisplayName")
+    local hasName = nameLabel and nameLabel:IsA("TextLabel") and (nameLabel.Text or "") ~= ""
     local genLabel = overhead:FindFirstChild("Generation")
     if genLabel and genLabel:IsA("TextLabel") then
         local text = genLabel.Text or ""
-        if text == "" or text == "$0/s" or text == "$0/S" then
-            return false
-        end
-        if parsePetGeneration(text) <= 0 and not text:match("[%d]") then
-            return false
+        if text ~= "" and text ~= "$0/s" and text ~= "$0/S" then
+            if parsePetGeneration(text) > 0 or text:match("[%d]") then
+                return true
+            end
         end
     end
-    local nameLabel = overhead:FindFirstChild("DisplayName")
-    if nameLabel and nameLabel:IsA("TextLabel") and (nameLabel.Text or "") == "" then
-        return false
-    end
-    return true
+    return hasName
 end
 
 local function isSnipeTargetPet(overhead)
@@ -1674,6 +1711,13 @@ local function isSnipeTargetPet(overhead)
     local tier, tierRank = getPetTierFromOverhead(overhead)
     if tier and CONFIG.Automation.PetSnipe.Rarities[tier] then
         return true
+    end
+
+    if CONFIG.Automation.PetSnipe.AcceptAnyGeneration then
+        local genLabel = overhead:FindFirstChild("Generation")
+        if genLabel and genLabel:IsA("TextLabel") and parsePetGeneration(genLabel.Text) > 0 then
+            return true
+        end
     end
 
     if CONFIG.Automation.PetSnipe.UseMinGeneration ~= false then
@@ -1818,16 +1862,21 @@ local function fireStealPrompt(prompt)
         if hrp then
             local attach = prompt.Parent
             if attach and attach:IsA("Attachment") then
-                hrp.CFrame = CFrame.new(attach.WorldPosition + Vector3.new(0, 1.5, 0))
+                hrp.CFrame = CFrame.new(attach.WorldPosition + Vector3.new(0, 2, 0))
+                hrp.AssemblyLinearVelocity = Vector3.zero
             end
         end
         if fireproximityprompt then
+            fireproximityprompt(prompt, 1, true)
+            task.wait(0.08)
+            fireproximityprompt(prompt, 0)
+            task.wait(0.05)
             fireproximityprompt(prompt, 1, true)
             task.wait(0.05)
             fireproximityprompt(prompt, 0)
         else
             prompt:InputHoldBegin()
-            task.wait(0.15)
+            task.wait(0.2)
             prompt:InputHoldEnd()
         end
     end)
@@ -1941,7 +1990,7 @@ local function scanBestSnipeTarget()
     local bestScore, bestPodium, bestPlot, bestName, bestValue = -1, nil, nil, nil, 0
 
     for _, plot in ipairs(plotsFolder:GetChildren()) do
-        if not isOwnPlot(plot) then
+        if isPlotAccessible(plot) then
             local podiums = plot:FindFirstChild("AnimalPodiums")
             if podiums then
                 for _, podium in ipairs(podiums:GetChildren()) do
@@ -1994,6 +2043,13 @@ local function attemptPetSteal(podium, petName)
     local _, hrp = getCharacterRoot()
     if not hrp or not podium or not podium.Parent then return false end
 
+    if type(_G.enableWallBypass) == "function" then
+        pcall(_G.enableWallBypass)
+    end
+    if type(_G.enableNoclip) == "function" and CONFIG.Automation.PetSnipe.AutoNoclip ~= false then
+        pcall(_G.enableNoclip)
+    end
+
     local prompt = getPodiumStealPrompt(podium)
     if not prompt then
         warn("[Pet Snipe] Podium prompt yok: " .. tostring(petName))
@@ -2003,21 +2059,30 @@ local function attemptPetSteal(podium, petName)
     prepStealPrompt(prompt)
 
     local standPart = getPodiumStandPart(podium)
+    local targetCF
     if standPart then
-        teleportCharacterTo(standPart.CFrame * CFrame.new(0, 0, 2.5))
+        targetCF = standPart.CFrame * CFrame.new(0, 1.5, 0)
+    else
+        local ok, pivot = pcall(function() return podium:GetPivot() end)
+        if ok and pivot then
+            targetCF = pivot + Vector3.new(0, 2, 0)
+        end
     end
-    task.wait(0.35)
+    if targetCF then
+        teleportCharacterTo(targetCF)
+    end
+    task.wait(0.45)
 
-    for attempt = 1, 8 do
+    for attempt = 1, 12 do
         fireStealPrompt(prompt)
-        task.wait(0.3)
+        task.wait(0.25)
         if isCarryingStolenPet() then
             print("[Pet Snipe] Calindi: " .. tostring(petName) .. " (deneme " .. attempt .. ")")
             return true
         end
     end
 
-    return waitForCarryingPet(10)
+    return waitForCarryingPet(12)
 end
 
 local function onWorkspacePetAttached(child)
@@ -2106,7 +2171,13 @@ function enablePetSnipe()
     _G.petSnipeState.lastDelivery = 0
     CONFIG.Automation.PetSnipe.Enabled = true
     playerPlot = findPlayerPlot() or playerPlot
+    if not playerPlot then
+        warn("[Pet Snipe] Kendi base bulunamadi - yine de taraniyor...")
+    end
     getDeliveryStealRemote()
+    if type(_G.enableWallBypass) == "function" then
+        pcall(_G.enableWallBypass)
+    end
     startSnipePromptWatcher()
     prepAllPlotPrompts()
 
