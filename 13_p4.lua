@@ -1,6 +1,6 @@
 -- Ken HUB Part 4/5 - Desync + ESP + Bundle
 -- Ken HUB Part 4/5 - Desync + ESP + Bundle
-local SCRIPT_VERSION = "1.78"
+local SCRIPT_VERSION = "1.79"
 local M = _G.KenHubMid
 if not M or not M.CONFIG then
     error("[Ken HUB] Part 3 yuklenmedi - Loader.lua kullan")
@@ -51,6 +51,9 @@ local plotColorButton = M.plotColorButton
 local disablePetSnipe = M.disablePetSnipe
 local enablePetSnipe = M.enablePetSnipe
 local petSnipeSwitch = M.petSnipeSwitch
+local enableNoclip = M.enableNoclip
+local disableNoclip = M.disableNoclip
+local noclipSwitch = M.noclipSwitch
 local setInvisibility = M.setInvisibility
 local findPlayerPlot = M.findPlayerPlot
 local RunService = game:GetService("RunService")
@@ -451,6 +454,9 @@ _G.KenHubBundle = {
     disablePetSnipe = disablePetSnipe,
     enablePetSnipe = enablePetSnipe,
     petSnipeSwitch = petSnipeSwitch,
+    enableNoclip = enableNoclip,
+    disableNoclip = disableNoclip,
+    noclipSwitch = noclipSwitch,
     setInvisibility = setInvisibility,
     findPlayerPlot = findPlayerPlot,
     getPlayerPlot = function() return playerPlot end,
