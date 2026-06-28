@@ -2,7 +2,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.80"
+local SCRIPT_VERSION = "1.81"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -443,10 +443,9 @@ local CONFIG = {
             MinTier = "Rare",
             UseMinGeneration = true,
             AcceptAnyGeneration = true,
-            SkipLockedPlots = true,
             AutoNoclip = true,
-            InstantTeleport = true,
-            TeleportSettle = 0.04,
+            TeleportPasses = 10,
+            TeleportSettle = 0.025,
             MinGeneration = 10e6,
             DeliveryDelay = 2.5,
             ScanInterval = 1.5,
@@ -1638,31 +1637,6 @@ local function isOwnPlot(plot)
     return false
 end
 
-local function isPlotLocked(plot)
-    if not plot then return true end
-    local timeText = getRemainingTime(plot)
-    if not timeText or timeText == "" then return false end
-    timeText = string.lower(tostring(timeText))
-    if timeText:find("unavailable") or timeText:find("error") then return false end
-    if timeText:find("unlock") or timeText:find("open") or timeText:find("0s") or timeText:find("0:00") then
-        return false
-    end
-    local sec = timeText:match("(%d+)%s*s")
-    if sec and tonumber(sec) > 0 then return true end
-    local minPart, secPart = timeText:match("(%d+):(%d+)")
-    if minPart and tonumber(minPart) > 0 then return true end
-    if secPart and tonumber(secPart) > 0 then return true end
-    return false
-end
-
-local function isPlotAccessible(plot)
-    if isOwnPlot(plot) then return false end
-    if CONFIG.Automation.PetSnipe.SkipLockedPlots ~= false and isPlotLocked(plot) then
-        return false
-    end
-    return true
-end
-
 local function getPetTierFromOverhead(overhead)
     if not overhead then return nil, 0 end
 
@@ -1816,21 +1790,32 @@ local function teleportCharacterTo(targetCFrame)
     end
 end
 
-local function snipeSecureTeleport(targetCFrame)
+local function snipeSecureTeleport(targetCFrame, targetPlot)
     if not targetCFrame then return false end
-    if type(_G.enableWallBypass) == "function" then
-        pcall(_G.enableWallBypass)
+
+    if CONFIG.Automation.PetSnipe.AutoNoclip ~= false then
+        if type(_G.enableNoclip) == "function" then pcall(_G.enableNoclip) end
+        if type(_G.enableWallBypass) == "function" then pcall(_G.enableWallBypass) end
     end
-    if type(_G.enableNoclip) == "function" then
-        pcall(_G.enableNoclip)
+    if targetPlot and type(_G.bypassPlotWalls) == "function" then
+        pcall(_G.bypassPlotWalls, targetPlot)
     end
 
-    local settle = (CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.TeleportSettle) or 0.04
-    local passes = (CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.InstantTeleport ~= false) and 5 or 2
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then pcall(function() hum.PlatformStand = true end) end
 
+    local passes = (CONFIG.Automation.PetSnipe.TeleportPasses) or 10
+    local settle = (CONFIG.Automation.PetSnipe.TeleportSettle) or 0.025
     for _ = 1, passes do
         teleportCharacterTo(targetCFrame)
         task.wait(settle)
+    end
+
+    if hum then
+        task.defer(function()
+            pcall(function() hum.PlatformStand = false end)
+        end)
     end
     return true
 end
@@ -2008,7 +1993,7 @@ local function deliverStolenPetToBase(skipTeleport)
         local homeCF = getBaseDeliveryCFrame(playerPlot) or _G.petSnipeState.homeCFrame
         if homeCF then
             print("[Pet Snipe] Kendi base'e isinlaniyor...")
-            snipeSecureTeleport(homeCF)
+            snipeSecureTeleport(homeCF, playerPlot)
         end
     end
 
@@ -2041,7 +2026,7 @@ local function scanBestSnipeTarget()
     local bestScore, bestPodium, bestPlot, bestName, bestValue = -1, nil, nil, nil, 0
 
     for _, plot in ipairs(plotsFolder:GetChildren()) do
-        if isPlotAccessible(plot) then
+        if not isOwnPlot(plot) then
             local podiums = plot:FindFirstChild("AnimalPodiums")
             if podiums then
                 for _, podium in ipairs(podiums:GetChildren()) do
@@ -2090,97 +2075,85 @@ local function scanBestSnipeTarget()
     return bestPodium, bestPlot, bestValue, bestName
 end
 
-local function executeInstantSnipe(podium, targetPlot, petName)
-    if not podium or not podium.Parent then return false end
-
-    refreshHomeCFrame()
-    local stealCF = getPodiumStealCFrame(podium)
-    if not stealCF then
-        warn("[Pet Snipe] Hedef konum bulunamadi: " .. tostring(petName))
+local function runSnipeRaid(podium, targetPlot, petName, petValue)
+    if not _G.petSnipeState.enabled or not podium or not podium.Parent then
         return false
     end
 
-    print("[Pet Snipe] Hedef base'e isinlaniyor: " .. tostring(petName) .. " @ " .. tostring(targetPlot and targetPlot.Name))
-    snipeSecureTeleport(stealCF)
-    task.wait(0.2)
+    refreshHomeCFrame()
+    local homeCF = _G.petSnipeState.homeCFrame
+    local stealCF = getPodiumStealCFrame(podium)
+    if not stealCF then
+        warn("[Pet Snipe] Hedef konum alinamadi: " .. tostring(petName))
+        return false
+    end
+
+    local ownerLabel = getPlotOwner(targetPlot) or (targetPlot and targetPlot.Name) or "?"
+    print(string.format(
+        "[Pet Snipe] >> %s ($%s/s) | %s base | TP -> CAL -> DON",
+        tostring(petName), tostring(petValue or 0), tostring(ownerLabel)
+    ))
+
+    -- 1) Dusman base (kilitli olsa bile duvar bypass)
+    snipeSecureTeleport(stealCF, targetPlot)
+    task.wait(0.12)
 
     local prompt = getPodiumStealPrompt(podium)
     if not prompt then
-        warn("[Pet Snipe] Prompt yok: " .. tostring(petName))
+        warn("[Pet Snipe] Steal prompt bulunamadi")
+        if homeCF then snipeSecureTeleport(homeCF, playerPlot) end
         return false
     end
     prepStealPrompt(prompt)
 
+    -- 2) Pet cal
     local stolen = false
-    for attempt = 1, 10 do
+    for attempt = 1, 15 do
+        if not _G.petSnipeState.enabled then break end
         fireStealPrompt(prompt)
-        task.wait(0.2)
+        task.wait(0.18)
         if isCarryingStolenPet() then
             stolen = true
-            print("[Pet Snipe] Calindi: " .. tostring(petName) .. " (deneme " .. attempt .. ")")
+            print("[Pet Snipe] Pet alindi (deneme " .. attempt .. ")")
             break
         end
     end
-
     if not stolen then
-        stolen = waitForCarryingPet(8)
+        stolen = waitForCarryingPet(6)
     end
 
-    if not stolen then
-        warn("[Pet Snipe] Calinamadi, geri donuluyor...")
-        local homeCF = _G.petSnipeState.homeCFrame or getBaseDeliveryCFrame(playerPlot)
-        if homeCF then snipeSecureTeleport(homeCF) end
-        return false
-    end
-
-    local homeCF = getBaseDeliveryCFrame(playerPlot) or _G.petSnipeState.homeCFrame
+    -- 3) Kendi base'e don (basarisiz olsa bile)
+    homeCF = getBaseDeliveryCFrame(playerPlot) or homeCF
     if homeCF then
-        print("[Pet Snipe] Pet ile kendi base'e donuluyor...")
-        snipeSecureTeleport(homeCF)
+        print("[Pet Snipe] Kendi base'e donuluyor...")
+        snipeSecureTeleport(homeCF, playerPlot)
     end
 
-    deliverStolenPetToBase(true)
-    return true
-end
-
-local function attemptPetSteal(podium, petName, targetPlot)
-    if CONFIG.Automation.PetSnipe.InstantTeleport ~= false then
-        return executeInstantSnipe(podium, targetPlot, petName)
-    end
-
-    local _, hrp = getCharacterRoot()
-    if not hrp or not podium or not podium.Parent then return false end
-
-    if type(_G.enableWallBypass) == "function" then
-        pcall(_G.enableWallBypass)
-    end
-    if type(_G.enableNoclip) == "function" and CONFIG.Automation.PetSnipe.AutoNoclip ~= false then
-        pcall(_G.enableNoclip)
-    end
-
-    local prompt = getPodiumStealPrompt(podium)
-    if not prompt then
-        warn("[Pet Snipe] Podium prompt yok: " .. tostring(petName))
+    if not stolen then
+        warn("[Pet Snipe] Pet alinamadi")
         return false
     end
 
-    prepStealPrompt(prompt)
-    local targetCF = getPodiumStealCFrame(podium)
-    if targetCF then
-        snipeSecureTeleport(targetCF)
-    end
-    task.wait(0.35)
+    -- 4) Teslim (ScriptRot: 2.5s bekle + DeliverySteal)
+    local delay = CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5
+    task.wait(delay)
 
-    for attempt = 1, 12 do
-        fireStealPrompt(prompt)
-        task.wait(0.25)
-        if isCarryingStolenPet() then
-            print("[Pet Snipe] Calindi: " .. tostring(petName) .. " (deneme " .. attempt .. ")")
-            return true
-        end
+    local remote = getDeliveryStealRemote()
+    if remote then
+        pcall(function()
+            if remote:IsA("RemoteFunction") then
+                remote:InvokeServer()
+            else
+                remote:FireServer()
+            end
+        end)
+        _G.petSnipeState.lastDelivery = tick()
+        print("[Pet Snipe] TESLIM OK - pet kendi base'inde")
+        return true
     end
 
-    return waitForCarryingPet(12)
+    warn("[Pet Snipe] DeliverySteal remote yok")
+    return false
 end
 
 local function onWorkspacePetAttached(child)
@@ -2199,9 +2172,12 @@ local function onWorkspacePetAttached(child)
             if isWeldToHrp(weld, hrp) and model.Parent == workspace then
                 _G.petSnipeState.busy = true
                 local homeCF = getBaseDeliveryCFrame(playerPlot) or _G.petSnipeState.homeCFrame
-                if homeCF then snipeSecureTeleport(homeCF) end
-                deliverStolenPetToBase(true)
-                task.wait((CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.StealCooldown) or 4)
+                if homeCF then snipeSecureTeleport(homeCF, playerPlot) end
+                task.wait(CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5)
+                local remote = getDeliveryStealRemote()
+                if remote then pcall(function() remote:FireServer() end) end
+                _G.petSnipeState.lastDelivery = tick()
+                task.wait((CONFIG.Automation.PetSnipe.StealCooldown) or 4)
                 _G.petSnipeState.busy = false
                 return true
             end
@@ -2215,9 +2191,12 @@ local function onWorkspacePetAttached(child)
             if isCarryingStolenPet() then
                 _G.petSnipeState.busy = true
                 local homeCF = getBaseDeliveryCFrame(playerPlot) or _G.petSnipeState.homeCFrame
-                if homeCF then snipeSecureTeleport(homeCF) end
-                deliverStolenPetToBase(true)
-                task.wait((CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.StealCooldown) or 4)
+                if homeCF then snipeSecureTeleport(homeCF, playerPlot) end
+                task.wait(CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5)
+                local remote = getDeliveryStealRemote()
+                if remote then pcall(function() remote:FireServer() end) end
+                _G.petSnipeState.lastDelivery = tick()
+                task.wait((CONFIG.Automation.PetSnipe.StealCooldown) or 4)
                 _G.petSnipeState.busy = false
                 return
             end
@@ -2241,19 +2220,14 @@ local function petSnipeLoop()
             if podium then
                 noTargetTicks = 0
                 _G.petSnipeState.busy = true
-                print(string.format("[Pet Snipe] Hedef bulundu: %s ($%s/s) -> aninda TP", tostring(petName), tostring(value)))
-                local ok, stolen = pcall(function()
-                    return attemptPetSteal(podium, petName, targetPlot)
+                local ok, result = pcall(function()
+                    return runSnipeRaid(podium, targetPlot, petName, value)
                 end)
-                if ok and stolen then
-                    if CONFIG.Automation.PetSnipe.InstantTeleport == false then
-                        deliverStolenPetToBase()
-                    end
-                    task.wait((CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.StealCooldown) or 4)
-                elseif not ok then
-                    warn("[Pet Snipe] Calma hatasi: " .. tostring(stolen))
+                if not ok then
+                    warn("[Pet Snipe] Hata: " .. tostring(result))
                 end
                 _G.petSnipeState.busy = false
+                task.wait((CONFIG.Automation.PetSnipe.StealCooldown) or 4)
             else
                 noTargetTicks = noTargetTicks + 1
                 if noTargetTicks == 5 then
@@ -2272,15 +2246,15 @@ function enablePetSnipe()
     _G.petSnipeState.enabled = true
     _G.petSnipeState.lastDelivery = 0
     CONFIG.Automation.PetSnipe.Enabled = true
+    CONFIG.Automation.PetSnipe.SkipLockedPlots = nil
+
     playerPlot = findPlayerPlot() or playerPlot
     refreshHomeCFrame()
-    if not playerPlot then
-        warn("[Pet Snipe] Kendi base bulunamadi - yine de taraniyor...")
-    end
+
+    if type(_G.enableNoclip) == "function" then pcall(_G.enableNoclip) end
+    if type(_G.enableWallBypass) == "function" then pcall(_G.enableWallBypass) end
+
     getDeliveryStealRemote()
-    if type(_G.enableWallBypass) == "function" then
-        pcall(_G.enableWallBypass)
-    end
     startSnipePromptWatcher()
     prepAllPlotPrompts()
 
@@ -2290,7 +2264,7 @@ function enablePetSnipe()
         pcall(function() task.cancel(_G.petSnipeState.thread) end)
     end
     _G.petSnipeState.thread = task.spawn(petSnipeLoop)
-    print("[Pet Snipe] Aktif | Plot: " .. tostring(playerPlot and playerPlot.Name or "?") .. " | Tier: " .. tostring(CONFIG.Automation.PetSnipe.MinTier or "Custom"))
+    print("[Pet Snipe] AKTIF | TP->CAL->DON | Kilitli base DAHIL | Plot: " .. tostring(playerPlot and playerPlot.Name or "?"))
 end
 
 function disablePetSnipe()
