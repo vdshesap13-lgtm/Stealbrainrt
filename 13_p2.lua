@@ -1,6 +1,6 @@
 -- Ken HUB Part 2/5 - UI Shell
 -- Ken HUB Part 2/5 - UI Shell
-local SCRIPT_VERSION = "1.75"
+local SCRIPT_VERSION = "1.76"
 local K = _G.KenHubState
 if not K or not K.CONFIG then
     error("[Ken HUB] Part 1 yuklenmedi - Loader.lua kullan")
@@ -850,7 +850,7 @@ local function disableESP()
             pcall(function() _G.ESP_Data.leaveConn:Disconnect() end)
             _G.ESP_Data.leaveConn = nil
         end
-        for plr, data in pairs(ESP_Data) do
+        for plr, data in pairs(_G.ESP_Data or {}) do
             if typeof(plr) == "Instance" then
                 if data.charConn then pcall(function() data.charConn:Disconnect() end) end
                 if data.highlight then pcall(function() data.highlight:Destroy() end) end
@@ -1685,3 +1685,4 @@ _G.KenHub_createBillboardGui = createBillboardGui
 _G.KenHub_updateBillboard = updateBillboard
 _G.KenHub_createSwitch = createSwitch
 pcall(function() _G.KenHubStatus("Part 2/5 OK") end)
+-- KenHub_P2_OK
