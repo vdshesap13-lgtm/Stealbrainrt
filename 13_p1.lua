@@ -2,7 +2,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.72"
+local SCRIPT_VERSION = "1.73"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
