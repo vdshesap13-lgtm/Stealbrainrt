@@ -20,27 +20,23 @@ pcall(function()
     _G.humanoidRootPart = _G.character:FindFirstChild("HumanoidRootPart")
 end)
 
--- Anti-debug: kaynak dosyada "@" varsa (decompiler) oyuncuyu at
+-- Anti-debug: sadece decompiler kaynak dosyalarinda calisir (loadstring/HttpGet engellenmez)
 local function runAntiDebugCheck()
     pcall(function()
         local getinfo = debug.getinfo
-        if not getinfo then
-            return
-        end
+        if not getinfo then return end
         local info = getinfo(1, "S")
-        if info and info.source and info.source:find("@") then
+        if info and info.source and info.source:find("^@") and not info.source:find("loadstring") then
             _G.Services.Players.LocalPlayer:Kick("stop trying to skid kid")
         end
     end)
 end
 runAntiDebugCheck()
 
--- Advanced Anti-Exploit System
-if not hookmetamethod then
-    warn(
-        '[Anti-Exploit] Your exploit does not support hookmetamethod. Exiting.'
-    )
-    return
+-- hookmetamethod yoksa sadece bazi ozellikler devre disi kalir; script yine acilir
+_G.HAS_HOOKMETAMETHOD = hookmetamethod ~= nil
+if not _G.HAS_HOOKMETAMETHOD then
+    warn("[Ken HUB] hookmetamethod desteklenmiyor - Fling/Anti-Exploit sinirli calisir, GUI acilacak.")
 end
 
 -- Executor Compatibility Checks
@@ -722,7 +718,18 @@ _G.createMobileCompatibleGui = function(name)
         end
     end
     
-    return nil
+    pcall(function()
+        _G.gui = Instance.new("ScreenGui")
+        _G.gui.Name = name
+        _G.gui.ResetOnSpawn = false
+        _G.gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+        _G.gui.Parent = pg or game:GetService("CoreGui")
+        if syn and syn.protect_gui then
+            pcall(syn.protect_gui, _G.gui)
+        end
+    end)
+    return _G.gui
 end
 
 -- Mobile Touch Optimization
@@ -790,6 +797,7 @@ local CONFIG = {
         IsMinimized = false,
         SettingsOpen = false,
         CurrentTab = "Movement",
+        ToggleKey = Enum.KeyCode.RightShift,
         InputTextSize = 14,
         Font = Enum.Font.Gotham,
         TitleFont = Enum.Font.GothamBold,
@@ -1561,25 +1569,58 @@ end
 -- Safe UI Parent
 --=========================================================
 local function getSafeUiParent()
-    local ok, hidden = pcall(function()
-        if _G.EXECUTOR_SUPPORT.gethui then
+    local ok, parent = pcall(function()
+        if gethui then
             return gethui()
-        elseif _G.EXECUTOR_SUPPORT.get_hidden_ui then
+        end
+        if get_hidden_ui then
             return get_hidden_ui()
-        elseif _G.EXECUTOR_SUPPORT.syn and syn.protect_gui then
-            return function(gui) return gui end
         end
         return nil
     end)
-    if ok and hidden then 
-        return hidden 
+    if ok and typeof(parent) == "Instance" then
+        return parent
     end
-    
-    -- Fallback to CoreGui if no safe UI is available
-    print("⚠️ Using CoreGui as UI parent - may be visible to others")
+
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then
+        return playerGui
+    end
+
+    print("⚠️ Using CoreGui as UI parent")
     return CoreGui
 end
 local safeui = getSafeUiParent()
+
+local function parentScreenGui(gui)
+    if not gui then return false end
+    local parented = false
+    pcall(function()
+        if gethui then
+            gui.Parent = gethui()
+            parented = true
+        elseif get_hidden_ui then
+            gui.Parent = get_hidden_ui()
+            parented = true
+        end
+    end)
+    if not parented then
+        pcall(function()
+            local playerGui = player:WaitForChild("PlayerGui", 5)
+            if playerGui then
+                gui.Parent = playerGui
+                parented = true
+            end
+        end)
+    end
+    if not parented then
+        gui.Parent = CoreGui
+    end
+    if syn and syn.protect_gui then
+        pcall(syn.protect_gui, gui)
+    end
+    return true
+end
 
 -- Helper function to create protected ScreenGui
 local function createProtectedScreenGui(name, displayOrder)
@@ -1604,9 +1645,10 @@ local function createProtectedScreenGui(name, displayOrder)
     -- Fallback to original method
     _G.screenGui = Instance.new("ScreenGui")
     _G.screenGui.Name = name
-    _G.screenGui.DisplayOrder = displayOrder or 2^31-1
-    _G.screenGui.Parent = safeui
     _G.screenGui.ResetOnSpawn = false
+    _G.screenGui.DisplayOrder = displayOrder or 2^31-1
+    _G.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    parentScreenGui(_G.screenGui)
     
     -- Apply GUI protection if available
     if syn and syn.protect_gui then
@@ -1652,11 +1694,17 @@ end
 local namePrefix = "KenHub_"
 
 --=========================================================
--- Character Essentials
+-- Character Essentials (GUI'yi bloklamamak icin bekleme yok)
 --=========================================================
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character and character:WaitForChild("Humanoid", 5)
-local humanoidRootPart = character and character:WaitForChild("HumanoidRootPart", 5)
+local character = player.Character
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+player.CharacterAdded:Connect(function(char)
+    character = char
+    humanoid = char:WaitForChild("Humanoid", 10)
+    humanoidRootPart = char:WaitForChild("HumanoidRootPart", 10)
+end)
 
 -- Packages and Events
 local UseItemEvent
@@ -7059,6 +7107,35 @@ settingsCloseBtn.MouseButton1Click:Connect(function()
 end)
 
 local isMinimized = false
+local isGuiHidden = false
+
+local function setMainGuiVisible(visible)
+    isGuiHidden = not visible
+    if mainFrame then
+        mainFrame.Visible = visible
+    end
+    if not visible and settingsFrame then
+        settingsFrame.Visible = false
+    end
+    if visible and isMinimized then
+        mainFrame.Size = CONFIG.UI.MinimizedSize
+        sidebar.Visible = false
+        contentArea.Visible = false
+    elseif visible then
+        mainFrame.Size = CONFIG.UI.FrameSize
+        sidebar.Visible = true
+        contentArea.Visible = true
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    local toggleKey = CONFIG.UI.ToggleKey or Enum.KeyCode.RightShift
+    if input.KeyCode == toggleKey or input.KeyCode == Enum.KeyCode.Insert then
+        setMainGuiVisible(isGuiHidden)
+    end
+end)
+
 minimizeBtn.MouseButton1Click:Connect(function()
     local success, _ = pcall(function()
         isMinimized = not isMinimized
@@ -7124,13 +7201,15 @@ closeBtn.MouseButton1Click:Connect(function()
             disableRagdollDesync()
         end
         
-        -- Destroy UI
-        if screenGui and screenGui.Parent then
-            screenGui:Destroy()
-        end
-        if circularToggleGui and circularToggleGui.Parent then
-            circularToggleGui:Destroy()
-        end
+        -- Paneli kapat (script calismaya devam eder, RightShift ile geri acilir)
+        setMainGuiVisible(false)
+        pcall(function()
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Ken HUB",
+                Text = "Panel gizlendi. RightShift veya Insert ile ac.",
+                Duration = 4,
+            })
+        end)
     end)
     if not success then
         warn("Failed to close UI")
@@ -7319,6 +7398,15 @@ end
 
 initialize()
 
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Ken HUB v1.67",
+        Text = "Yuklendi! RightShift veya Insert = panel ac/kapa",
+        Duration = 5,
+    })
+end)
+print("[Ken HUB] Panel yuklendi. RightShift veya Insert ile ac/kapa.")
+
 --=========================================================
 -- Cleanup on Script End
 --=========================================================
@@ -7459,9 +7547,11 @@ for _, plr in ipairs(Players:GetPlayers()) do
 end
 
 -- Test save system on startup
-task.wait(2) -- Wait for UI to be created
+task.spawn(function()
+task.wait(2)
 pcall(function()
 _G.saveUIState()
+end)
 end)
 
 -- Periodic Settings Save System (Every 3 seconds)
@@ -7475,13 +7565,17 @@ task.spawn(function()
 end)
 
 --- Restore toggle states after ALL switches are created
-task.wait(1) -- Wait a moment for all switches to be fully initialized
+task.spawn(function()
+task.wait(1)
 pcall(function()
 _G.applyLoadedToggleStates()
 end)
+end)
 
 -- Save current UI state to ensure persistent toggles are saved
-task.wait(0.5) -- Small delay to ensure everything is loaded
+task.spawn(function()
+task.wait(1.5)
 pcall(function()
 _G.saveUIState()
+end)
 end)
