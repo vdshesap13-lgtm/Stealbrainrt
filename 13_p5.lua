@@ -1,6 +1,6 @@
 -- Ken HUB Part 5/5 - Init + Cleanup
 -- Ken HUB Part 5/5 - Init + Cleanup
-local SCRIPT_VERSION = "1.76"
+local SCRIPT_VERSION = "1.78"
 local B = _G.KenHubBundle
 if not B or not B.mainFrame or not B.createSwitch then
     _G.KenHubError("Part 4 export eksik - Loader ile 5 parcayi sirayla yukle")
@@ -918,6 +918,20 @@ task.wait(1)
 pcall(function()
 _G.applyLoadedToggleStates()
 end)
+end)
+
+task.delay(3, function()
+    pcall(function()
+        if CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.Enabled then
+            local startFn = enablePetSnipe or _G.enablePetSnipe
+            if type(startFn) == "function" then
+                startFn()
+                if petSnipeSwitch and petSnipeSwitch.set then
+                    petSnipeSwitch.set(true)
+                end
+            end
+        end
+    end)
 end)
 
 -- Save current UI state to ensure persistent toggles are saved
