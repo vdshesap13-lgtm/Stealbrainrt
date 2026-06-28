@@ -1,6 +1,6 @@
 --[[
     KEN HUB LOADER v5.1
-    5 parca | min v1.76
+    5 parca | min v1.78
     loadstring(game:HttpGet(".../Loader.lua?v=176&t="..os.time()))()
 ]]
 
@@ -8,11 +8,11 @@ local BASE = "https://raw.githubusercontent.com/vdshesap13-lgtm/Stealbrainrt/mai
 local PARTS = {
     { "Part 1/5", BASE .. "13_p1.lua", "KenHub_P1_OK" },
     { "Part 2/5", BASE .. "13_p2.lua", "KenHub_P2_OK" },
-    { "Part 3/5", BASE .. "13_p3.lua", "KenHub_P3_BRIDGE_v176" },
+    { "Part 3/5", BASE .. "13_p3.lua", "KenHub_P3_BRIDGE_v178" },
     { "Part 4/5", BASE .. "13_p4.lua", "KenHub_P4_OK" },
     { "Part 5/5", BASE .. "13_p5.lua", "KenHub_P5_OK" },
 }
-local MIN_VERSION = "1.76"
+local MIN_VERSION = "1.78"
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
