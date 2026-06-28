@@ -1,6 +1,6 @@
 -- Ken HUB Part 4/5 - Desync + ESP + Bundle
 -- Ken HUB Part 4/5 - Desync + ESP + Bundle
-local SCRIPT_VERSION = "1.76"
+local SCRIPT_VERSION = "1.78"
 local M = _G.KenHubMid
 if not M or not M.CONFIG then
     error("[Ken HUB] Part 3 yuklenmedi - Loader.lua kullan")
