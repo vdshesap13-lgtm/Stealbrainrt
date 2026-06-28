@@ -1,8 +1,8 @@
 -- Ken HUB Part 3/5 - Sections + Automation
 -- Ken HUB Part 3/5 - Sections + Automation
-local SCRIPT_VERSION = "1.72"
+local SCRIPT_VERSION = "1.73"
 local K = _G.KenHubState
-if not K or not K.createSwitch or not K.createSection then
+if not K or not K.createSwitch or not K.createSection or not K.setupUnhittableControl then
     error("[Ken HUB] Part 2 yuklenmedi - Loader.lua kullan")
 end
 local CONFIG = K.CONFIG
@@ -38,6 +38,17 @@ local playerPlot = K.playerPlot
 local character = K.character
 local humanoid = K.humanoid
 local humanoidRootPart = K.humanoidRootPart
+local setupJumpPowerControl = K.setupJumpPowerControl
+local setupSpeedControl = K.setupSpeedControl
+local setupUnhittableControl = K.setupUnhittableControl
+local setupResizeControl = K.setupResizeControl
+local setupFlingControl = K.setupFlingControl
+local enableESP = K.enableESP
+local disableESP = K.disableESP
+local enablePlotESP = K.enablePlotESP
+local disablePlotESP = K.disablePlotESP
+local jumpSwitch
+local speedSwitch
 -- UI Sections Setup
 --=========================================================
 _G.homeSection = createSection("Home")
@@ -47,6 +58,14 @@ _G.automationSection = createSection("Automation")
 _G.serverSection = createSection("Server")
 _G.patchedSection = createSection("Patched")
 _G.desyncSection = createSection("Desync")
+
+-- Jump/Speed switchleri section olustuktan sonra bagla
+do
+    local _, js = setupJumpPowerControl(_G.movementSection)
+    jumpSwitch = js
+    local _, ss = setupSpeedControl(_G.movementSection)
+    speedSwitch = ss
+end
 
 createTabButton("Home", "Home", "rbxassetid://6031265976")
 createTabButton("Movement", "Movement", "rbxassetid://6035047409")
