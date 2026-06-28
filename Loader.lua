@@ -1,18 +1,18 @@
 --[[
-    KEN HUB LOADER v5
-    5 parca: 13_p1 .. 13_p5 | v1.73+
-    loadstring(game:HttpGet(".../Loader.lua?v=173&t="..os.time()))()
+    KEN HUB LOADER v5.1
+    5 parca | min v1.76
+    loadstring(game:HttpGet(".../Loader.lua?v=176&t="..os.time()))()
 ]]
 
 local BASE = "https://raw.githubusercontent.com/vdshesap13-lgtm/Stealbrainrt/main/"
 local PARTS = {
-    { "Part 1/5", BASE .. "13_p1.lua" },
-    { "Part 2/5", BASE .. "13_p2.lua" },
-    { "Part 3/5", BASE .. "13_p3.lua" },
-    { "Part 4/5", BASE .. "13_p4.lua" },
-    { "Part 5/5", BASE .. "13_p5.lua" },
+    { "Part 1/5", BASE .. "13_p1.lua", "KenHub_P1_OK" },
+    { "Part 2/5", BASE .. "13_p2.lua", "KenHub_P2_OK" },
+    { "Part 3/5", BASE .. "13_p3.lua", "KenHub_P3_BRIDGE_v176" },
+    { "Part 4/5", BASE .. "13_p4.lua", "KenHub_P4_OK" },
+    { "Part 5/5", BASE .. "13_p5.lua", "KenHub_P5_OK" },
 }
-local MIN_VERSION = "1.75"
+local MIN_VERSION = "1.76"
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -59,8 +59,8 @@ local function makeCorner(i, r)
 end
 
 local Panel = Instance.new("Frame")
-Panel.Size = UDim2.new(0, 360, 0, 130)
-Panel.Position = UDim2.new(0.5, -180, 0, 12)
+Panel.Size = UDim2.new(0, 380, 0, 140)
+Panel.Position = UDim2.new(0.5, -190, 0, 12)
 Panel.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
 Panel.BorderSizePixel = 0
 Panel.Parent = Gui
@@ -72,7 +72,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -16, 0, 28)
 Title.Position = UDim2.new(0, 8, 0, 6)
 Title.BackgroundTransparency = 1
-Title.Text = "Ken HUB Loader v5"
+Title.Text = "Ken HUB Loader v5.1"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -81,7 +81,7 @@ Title.Parent = Panel
 
 local Status = Instance.new("TextLabel")
 Status.Name = "Status"
-Status.Size = UDim2.new(1, -16, 0, 88)
+Status.Size = UDim2.new(1, -16, 0, 98)
 Status.Position = UDim2.new(0, 8, 0, 36)
 Status.BackgroundTransparency = 1
 Status.Text = "Baslatiliyor..."
@@ -128,55 +128,59 @@ local function httpGet(url)
     return nil
 end
 
-local function validatePartBody(label, body)
+local function validatePartBody(label, body, marker)
     if body:find("game:BindToClose") or body:find("game%.BindToClose") then
-        setStatus(label .. " ESKI SURUM! GitHub'a v" .. MIN_VERSION .. " yukle.", true)
+        setStatus(label .. " ESKI SURUM (BindToClose)! GitHub'a v" .. MIN_VERSION .. " yukle.", true)
         return false
     end
     local ver = body:match('SCRIPT_VERSION%s*=%s*"([^"]+)"')
     if ver and ver < MIN_VERSION then
-        setStatus(label .. " surum " .. ver .. " eski. Min " .. MIN_VERSION .. " gerekli.", true)
+        setStatus(label .. " surum " .. ver .. " eski. GitHub'da v" .. MIN_VERSION .. " olmali.", true)
+        return false
+    end
+    if marker and not body:find(marker, 1, true) then
+        setStatus(label .. " ESKI/CACHE dosya! Marker yok: " .. marker, true)
         return false
     end
     return true
 end
 
-local function runPart(label, url)
+local function runPart(label, url, marker)
     setStatus(label .. " indiriliyor...")
     local body = httpGet(url)
     if not body then
-        setStatus(label .. " indirilemedi.", true)
+        setStatus(label .. " indirilemedi. Repo PUBLIC mi?", true)
         return false
     end
-    if #body < 200 then
-        setStatus(label .. " cok kucuk (" .. #body .. " byte).", true)
+    if #body < 500 then
+        setStatus(label .. " cok kucuk (" .. #body .. " byte) - yanlis dosya?", true)
         return false
     end
     if body:find("<!DOCTYPE") or body:find("<html") then
-        setStatus(label .. " HTML dondu. Repo PUBLIC mi?", true)
+        setStatus(label .. " HTML dondu - URL veya repo kontrol et.", true)
         return false
     end
-    if not validatePartBody(label, body) then return false end
+    if not validatePartBody(label, body, marker) then return false end
 
     local ver = body:match('SCRIPT_VERSION%s*=%s*"([^"]+)"')
-    setStatus(label .. " v" .. tostring(ver or "?") .. " derleniyor...")
+    setStatus(label .. " v" .. tostring(ver or "?") .. " (" .. #body .. " byte) derleniyor...")
     local fn, compileErr = loadstring(body)
     if not fn then
-        setStatus("Compile (" .. label .. "): " .. tostring(compileErr):sub(1, 180), true)
+        setStatus("Compile (" .. label .. "): " .. tostring(compileErr):sub(1, 200), true)
         return false
     end
     setStatus(label .. " calistiriliyor...")
     local runOk, runErr = xpcall(fn, debug.traceback)
     if not runOk then
-        setStatus("Runtime (" .. label .. "): " .. tostring(runErr):sub(1, 180), true)
+        setStatus("Runtime (" .. label .. "): " .. tostring(runErr):sub(1, 200), true)
         return false
     end
     return true
 end
 
 for _, entry in ipairs(PARTS) do
-    local label, url = entry[1], entry[2]
-    if not runPart(label, url) then return end
+    local label, url, marker = entry[1], entry[2], entry[3]
+    if not runPart(label, url, marker) then return end
 end
 
 setStatus("Ken HUB v" .. MIN_VERSION .. " yuklendi! KH butonuna dokun.")
