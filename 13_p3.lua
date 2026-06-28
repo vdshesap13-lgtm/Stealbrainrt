@@ -1,5 +1,5 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.80"
+local SCRIPT_VERSION = "1.81"
 
 -- [Ken HUB v1.76] Global pet tier tables (split-safe, never nil)
 if type(_G.KenHub) ~= "table" then _G.KenHub = {} end
@@ -430,7 +430,7 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 local jumpSwitch
 local speedSwitch
 
--- KenHub_P3_BRIDGE_v180
+-- KenHub_P3_BRIDGE_v181
 -- Part 1/2 API bridge
 
 local HttpService = K.HttpService or game:GetService("HttpService")
@@ -1494,6 +1494,38 @@ function _G.disableWallBypass()
     applyWallBypassToAllPlots()
 end
 
+function _G.bypassPlotWalls(plot)
+    if not plot then return end
+    local folders = {"InvisibleWalls", "LaserHitbox", "Barriers", "Walls", "Blockers", "ForceField", "Colliders"}
+    for _, folderName in ipairs(folders) do
+        local folder = plot:FindFirstChild(folderName)
+        if folder then
+            for _, obj in ipairs(folder:GetDescendants()) do
+                if obj:IsA("BasePart") then
+                    pcall(function()
+                        obj.CanCollide = false
+                        obj.CanTouch = false
+                        local mesh = obj:FindFirstChildOfClass("SpecialMesh") or obj:FindFirstChild("Mesh")
+                        if mesh then mesh:Destroy() end
+                    end)
+                end
+            end
+        end
+    end
+    local purchases = plot:FindFirstChild("Purchases")
+    local plotBlock = purchases and purchases:FindFirstChild("PlotBlock")
+    if plotBlock then
+        for _, obj in ipairs(plotBlock:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                pcall(function()
+                    obj.CanCollide = false
+                    obj.CanTouch = false
+                end)
+            end
+        end
+    end
+end
+
 local function startWallBypassWatcher()
     for _, conn in ipairs(wallBypassConns) do
         pcall(function() conn:Disconnect() end)
@@ -2235,7 +2267,7 @@ createSectionHeader(_G.automationSection, "Pet Snipe")
 local petSnipeInfo = Instance.new("TextLabel")
 petSnipeInfo.Size = UDim2.new(1, -20, 0, 44)
 petSnipeInfo.BackgroundTransparency = 1
-petSnipeInfo.Text = "Katalogdaki pet bulununca hedef base'e TP -> cal -> kendi base'e TP -> teslim."
+petSnipeInfo.Text = "Hedef pet -> dusman base TP (kilitli dahil) -> cal -> kendi base TP -> teslim."
 petSnipeInfo.TextColor3 = CONFIG.Colors.SubText
 petSnipeInfo.TextSize = 13
 petSnipeInfo.Font = Enum.Font.Gotham
@@ -2290,13 +2322,8 @@ createNumberInput(_G.automationSection, "Min M/s (ornek: 100 = 100M)", (CONFIG.A
     _G.saveSettings()
 end)
 
-createSwitch(_G.automationSection, "Snipe sirasinda duvar bypass", CONFIG.Automation.PetSnipe.AutoNoclip ~= false, function(on)
+createSwitch(_G.automationSection, "Snipe: duvar/lazer bypass", CONFIG.Automation.PetSnipe.AutoNoclip ~= false, function(on)
     CONFIG.Automation.PetSnipe.AutoNoclip = on
-    _G.saveSettings()
-end)
-
-createSwitch(_G.automationSection, "Kilitli base atla", CONFIG.Automation.PetSnipe.SkipLockedPlots ~= false, function(on)
-    CONFIG.Automation.PetSnipe.SkipLockedPlots = on
     _G.saveSettings()
 end)
 
