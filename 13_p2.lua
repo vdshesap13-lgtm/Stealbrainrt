@@ -1,6 +1,6 @@
 -- Ken HUB Part 2/5 - UI Shell
 -- Ken HUB Part 2/5 - UI Shell
-local SCRIPT_VERSION = "1.71"
+local SCRIPT_VERSION = "1.72"
 local K = _G.KenHubState
 if not K or not K.CONFIG then
     error("[Ken HUB] Part 1 yuklenmedi - Loader.lua kullan")
@@ -22,6 +22,10 @@ local setInvisibility = K.setInvisibility
 local enablePetSnipe = K.enablePetSnipe
 local disablePetSnipe = K.disablePetSnipe
 local playerPlot = K.playerPlot
+local character = K.character
+local humanoid = K.humanoid
+local humanoidRootPart = K.humanoidRootPart
+local UserInputService = game:GetService("UserInputService")
 local screenGui = createProtectedScreenGui((namePrefix or '') .. 'ESPVisuals')
 screenGui.Enabled = true
 pcall(function()
@@ -1654,10 +1658,10 @@ end
 -- [Ken HUB Part 2 export]
 local K = _G.KenHubState
 K.createSection = createSection
+K.createTabButton = createTabButton
 K.createSectionHeader = createSectionHeader
 K.createSwitch = createSwitch
 K.createNumberInput = createNumberInput
-K.createButton = createButton
 K.mainFrame = mainFrame
 K.screenGui = screenGui
 K.settingsContent = settingsContent
