@@ -1,45 +1,181 @@
 --=========================================================
--- ken HUB 6 took 40 hours :D - OPTIMIZED VERSION FULLY AI
+-- Ken HUB v1.67 - Delta Executor optimized bootstrap
 --=========================================================
 
--- Services & player (eski sürümde decimal escape + loadstring ile gizleniyordu:
---   local game = game:GetService("Players"):LocalPlayer()
--- ayni is zaten asagida acik sekilde yapiliyor)
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local LP = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local PlayerGui = LP:FindFirstChild("PlayerGui")
+if not PlayerGui then
+    pcall(function() PlayerGui = LP:WaitForChild("PlayerGui", 20) end)
+end
+if not PlayerGui then
+    PlayerGui = CoreGui
+end
+
+local function KenNotify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 6,
+        })
+    end)
+end
+
+-- Her zaman gorunen KH acma butonu (script hata verse bile ekranda kalir)
+local FabGui = Instance.new("ScreenGui")
+FabGui.Name = "KenHub_FAB"
+FabGui.ResetOnSpawn = false
+FabGui.IgnoreGuiInset = true
+FabGui.DisplayOrder = 2147483647
+FabGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+FabGui.Parent = PlayerGui
+
+local FabBtn = Instance.new("TextButton")
+FabBtn.Name = "OpenKenHub"
+FabBtn.Size = UDim2.new(0, 58, 0, 58)
+FabBtn.Position = UDim2.new(0, 12, 0.5, -29)
+FabBtn.BackgroundColor3 = Color3.fromRGB(14, 144, 210)
+FabBtn.Text = "KH"
+FabBtn.Font = Enum.Font.GothamBold
+FabBtn.TextSize = 20
+FabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+FabBtn.AutoButtonColor = false
+FabBtn.Parent = FabGui
+Instance.new("UICorner", FabBtn).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", FabBtn).Color = Color3.fromRGB(255, 255, 255)
+
+_G.KenHubPanelToggle = nil
+local function onFabClick()
+    if _G.KenHubPanelToggle then
+        _G.KenHubPanelToggle()
+    else
+        KenNotify("Ken HUB", "Panel henuz yuklenmedi, birkaç saniye bekle...")
+    end
+end
+FabBtn.MouseButton1Click:Connect(onFabClick)
+FabBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then onFabClick() end
+end)
+
+-- Aninda gorunen durum paneli
+local BootstrapGui = Instance.new("ScreenGui")
+BootstrapGui.Name = "KenHub_Bootstrap"
+BootstrapGui.ResetOnSpawn = false
+BootstrapGui.IgnoreGuiInset = true
+BootstrapGui.DisplayOrder = 2147483646
+BootstrapGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+BootstrapGui.Parent = PlayerGui
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Name = "Status"
+StatusLabel.Size = UDim2.new(0, 300, 0, 44)
+StatusLabel.Position = UDim2.new(0.5, -150, 0, 8)
+StatusLabel.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatusLabel.Text = "Ken HUB baslatiliyor..."
+StatusLabel.Font = Enum.Font.GothamBold
+StatusLabel.TextSize = 13
+StatusLabel.TextWrapped = true
+StatusLabel.Parent = BootstrapGui
+Instance.new("UICorner", StatusLabel).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", StatusLabel).Color = Color3.fromRGB(14, 144, 210)
+
+function _G.KenHubStatus(msg)
+    StatusLabel.Text = tostring(msg)
+end
+
+function _G.KenHubError(msg)
+    local err = tostring(msg)
+    StatusLabel.Text = "HATA: " .. err:sub(1, 180)
+    StatusLabel.BackgroundColor3 = Color3.fromRGB(90, 25, 25)
+    KenNotify("Ken HUB Hata", err:sub(1, 120))
+    warn("[Ken HUB ERROR]", err)
+end
+
+function _G.KenHubReady()
+    pcall(function() BootstrapGui:Destroy() end)
+end
+
+KenNotify("Ken HUB", "Script yukleniyor...")
+_G.KenHubStatus("Ken HUB yukleniyor...")
+
 _G.Services = {
-    Players = game:GetService("Players"),
+    Players = Players,
     RunService = game:GetService("RunService"),
-    UserInputService = game:GetService("UserInputService"),
+    UserInputService = UserInputService,
     TweenService = game:GetService("TweenService"),
     HttpService = game:GetService("HttpService"),
     TeleportService = game:GetService("TeleportService"),
 }
-_G.player = _G.Services.Players.LocalPlayer
-pcall(function()
-    _G.character = _G.player.Character
-    if _G.character then
-        _G.humanoid = _G.character:FindFirstChildOfClass("Humanoid")
-        _G.humanoidRootPart = _G.character:FindFirstChild("HumanoidRootPart")
-    end
-end)
+_G.player = LP
+_G.character = LP.Character
+if _G.character then
+    _G.humanoid = _G.character:FindFirstChildOfClass("Humanoid")
+    _G.humanoidRootPart = _G.character:FindFirstChild("HumanoidRootPart")
+end
 
--- Anti-debug: sadece decompiler kaynak dosyalarinda calisir (loadstring/HttpGet engellenmez)
-local function runAntiDebugCheck()
+-- Executor algilama
+_G.detectExecutor = function()
+    if identifyexecutor then
+        local ok, name = pcall(identifyexecutor)
+        if ok and name then return tostring(name) end
+    end
+    if getgenv and getgenv().executor then return getgenv().executor end
+    return "unknown"
+end
+_G.executor = _G.detectExecutor()
+local execLower = string.lower(tostring(_G.executor))
+_G.isDelta = execLower:find("delta") ~= nil
+_G.isMobile = _G.isDelta
+    or execLower:find("mobile") ~= nil
+    or execLower:find("android") ~= nil
+    or execLower:find("ios") ~= nil
+    or (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled)
+
+_G.HAS_HOOKMETAMETHOD = hookmetamethod ~= nil
+
+-- Delta / mobil GUI parent: PlayerGui en guvenilir (acik kaynak hub standardi)
+_G.getKenHubGuiParent = function()
+    if PlayerGui and PlayerGui.Parent then
+        return PlayerGui
+    end
+    if gethui then
+        local ok, hui = pcall(gethui)
+        if ok and typeof(hui) == "Instance" then return hui end
+    end
+    if get_hidden_ui then
+        local ok, hui = pcall(get_hidden_ui)
+        if ok and typeof(hui) == "Instance" then return hui end
+    end
+    return CoreGui
+end
+
+_G.createMobileCompatibleGui = function(name)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = name
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.DisplayOrder = 999999
+    gui.Enabled = true
+    gui.Parent = _G.getKenHubGuiParent()
+    return gui
+end
+
+_G.optimizeForMobile = function(gui)
+    if not gui then return end
     pcall(function()
-        local getinfo = debug.getinfo
-        if not getinfo then return end
-        local info = getinfo(1, "S")
-        if info and info.source and info.source:find("^@") and not info.source:find("loadstring") then
-            _G.Services.Players.LocalPlayer:Kick("stop trying to skid kid")
-        end
+        gui.IgnoreGuiInset = true
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 999999
     end)
 end
-runAntiDebugCheck()
 
--- hookmetamethod yoksa sadece bazi ozellikler devre disi kalir; script yine acilir
-_G.HAS_HOOKMETAMETHOD = hookmetamethod ~= nil
-if not _G.HAS_HOOKMETAMETHOD then
-    warn("[Ken HUB] hookmetamethod desteklenmiyor - Fling/Anti-Exploit sinirli calisir, GUI acilacak.")
-end
+_G.KenHubStatus("Executor: " .. tostring(_G.executor))
 
 -- Executor Compatibility Checks
 _G.checkExecutorSupport = function()
@@ -195,9 +331,9 @@ local AE = {
 	}),
 
 	CFG = {
-		KickEnabled = true, -- Still kicks but prevents stack overflow
+		KickEnabled = false,
 		CrashEnabled = false,
-		NotifyEnabled = false, -- Disable notifications to prevent conflicts
+		NotifyEnabled = false,
 
 		ScanInterval = 2.0, -- Much slower scanning to prevent stack overflow
 		ConsecutiveHooksRequired = 3, -- Moderate detection threshold
@@ -583,144 +719,18 @@ AE.installPrintHook = function()
 	end)
 end
 
---=============================== Bootstrap ===============================--
+-- Anti-exploit izleme KAPALI (Delta ve diger executor'larda yanlis kick atiyordu)
+-- AE tablosu bazi legacy referanslar icin duruyor, monitor baslatilmiyor.
 
--- Executor algilama (AE bootstrap'tan ONCE - Delta hook taramasi kick atmasin)
-_G.detectExecutor = function()
-    _G.executor = "unknown"
-    if identifyexecutor then
-        local ok, name = pcall(identifyexecutor)
-        if ok and name then
-            _G.executor = tostring(name)
-        end
-    end
-    if _G.executor == "unknown" and getgenv and getgenv().executor then
-        _G.executor = getgenv().executor
-    elseif _G.executor == "unknown" and syn and syn.request then
-        _G.executor = "synapse"
-    elseif _G.executor == "unknown" and krnl and krnl.request then
-        _G.executor = "krnl"
-    elseif _G.executor == "unknown" and fluxus and fluxus.request then
-        _G.executor = "fluxus"
-    elseif _G.executor == "unknown" and is_sirhurt_closure then
-        _G.executor = "sirhurt"
-    end
-    return _G.executor
-end
-
-_G.executor = _G.detectExecutor()
-local _executorLower = string.lower(tostring(_G.executor))
-_G.isDelta = _executorLower:find("delta") ~= nil
-_G.isMobile = _G.isDelta
-    or _executorLower:find("mobile") ~= nil
-    or _executorLower:find("android") ~= nil
-    or _executorLower:find("ios") ~= nil
-    or (_G.Services.UserInputService.TouchEnabled and not _G.Services.UserInputService.KeyboardEnabled)
-
-if _G.isDelta then
-    AE.CFG.KickEnabled = false
-    AE.CFG.ScanInterval = 9999
-    print("[Ken HUB] Delta Executor algilandi - guvenli mod aktif")
-end
-
-if not _G.isDelta then
-do
-	AE.S.CoreGui.DescendantAdded:Connect(function(d)
-		pcall(function()
-			AE.checkDex(d)
-		end)
-	end)
-
-	pcall(function()
-		AE.captureOriginals()
-		AE.startHookScan()
-	end)
-
-	AE.installPrintHook()
-end
-end
-
--- Delta / mobil GUI parent (gethui -> PlayerGui -> CoreGui)
-_G.createMobileCompatibleGui = function(name)
-    local PlayersSvc = game:GetService("Players")
-    local CoreGuiSvc = game:GetService("CoreGui")
-    local gui = Instance.new("ScreenGui")
-    gui.Name = name
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 999999
-    gui.Enabled = true
-
-    local function tryParent(label, fn)
-        local ok, success = pcall(fn)
-        if ok and success and gui.Parent then
-            print("[Ken HUB] GUI parent:", label)
-            return true
-        end
-        return false
-    end
-
-    if gethui then
-        if tryParent("gethui", function()
-            local hui = gethui()
-            if typeof(hui) == "Instance" then
-                gui.Parent = hui
-                return gui.Parent == hui
-            end
-        end) then return gui end
-    end
-
-    if tryParent("PlayerGui", function()
-        local pg = PlayersSvc.LocalPlayer:FindFirstChild("PlayerGui")
-            or PlayersSvc.LocalPlayer:WaitForChild("PlayerGui", 10)
-        gui.Parent = pg
-        return pg ~= nil
-    end) then return gui end
-
-    if get_hidden_ui then
-        if tryParent("get_hidden_ui", function()
-            gui.Parent = get_hidden_ui()
-            return gui.Parent ~= nil
-        end) then return gui end
-    end
-
-    tryParent("CoreGui", function()
-        gui.Parent = CoreGuiSvc
-        return true
-    end)
-
-    return gui.Parent and gui or nil
-end
-
--- Mobile Touch Optimization
-_G.optimizeForMobile = function(gui)
-    if not gui then return end
-    pcall(function()
-        gui.IgnoreGuiInset = true
-        gui.ResetOnSpawn = false
-        gui.DisplayOrder = 999999
-        if _G.isMobile or _G.isDelta then
-            if gui.SetAttribute then
-                gui:SetAttribute("MobileOptimized", true)
-                gui:SetAttribute("TouchEnabled", true)
-            end
-        end
-    end)
-end
-
---// Services
-local Players = game:GetService("Players")
+--// Services (Players/CoreGui yukarida bootstrap'ta tanimli)
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui = game:GetService("CoreGui")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 
-local player = Players.LocalPlayer
+local player = LP
 local username = player.Name
 
 
@@ -1529,50 +1539,12 @@ end
 -- Safe UI Parent
 --=========================================================
 local function getSafeUiParent()
-    local ok, parent = pcall(function()
-        if gethui then
-            return gethui()
-        end
-        if get_hidden_ui then
-            return get_hidden_ui()
-        end
-        return nil
-    end)
-    if ok and typeof(parent) == "Instance" then
-        return parent
-    end
-
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if playerGui then
-        return playerGui
-    end
-
-    print("⚠️ Using CoreGui as UI parent")
-    return CoreGui
+    return _G.getKenHubGuiParent()
 end
-local safeui = getSafeUiParent()
 
 local function parentScreenGui(gui)
     if not gui then return false end
-    if gethui then
-        local ok = pcall(function()
-            local hui = gethui()
-            if typeof(hui) == "Instance" then
-                gui.Parent = hui
-            end
-        end)
-        if ok and gui.Parent then return true end
-    end
-    local okPg = pcall(function()
-        local playerGui = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 10)
-        if playerGui then
-            gui.Parent = playerGui
-        end
-    end)
-    if okPg and gui.Parent then return true end
-    pcall(function()
-        gui.Parent = CoreGui
-    end)
+    gui.Parent = _G.getKenHubGuiParent()
     return gui.Parent ~= nil
 end
 
@@ -2341,6 +2313,9 @@ end
 
 local screenGui = createProtectedScreenGui((namePrefix or '') .. 'ESPVisuals')
 screenGui.Enabled = true
+pcall(function()
+    _G.KenHubStatus("GUI olusturuldu -> " .. tostring(screenGui.Parent and screenGui.Parent.Name or "?"))
+end)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "Main"
@@ -2357,6 +2332,7 @@ end
 mainFrame.BackgroundColor3 = CONFIG.Colors.Panel
 mainFrame.Active = true
 mainFrame.Visible = true
+_G.KenHubMainFrame = mainFrame
 mainFrame.Parent = screenGui
 protectGuiElement(mainFrame)
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
@@ -6035,10 +6011,8 @@ local function disablePlotTimeESP()
         warn("Failed to disable Plot Time ESP")
     end
 end
--- Enable plot time ESP by default (with error handling)
-pcall(function()
-enablePlotTimeESP()
-end)
+-- Plot Time ESP varsayilan kapali (startup'ta agir yuk bindirmesin)
+-- Acmak icin Visual/Settings'ten toggle kullan
 
 --=========================================================
 -- Brainrot ESP System
@@ -6217,7 +6191,7 @@ end
 
 -- Create Brainrot ESP toggle in Toggles section (moved here after function definitions)
 createButton(_G.togglesSection, "Toggle Brainrot ESP", function()
-    createCircularToggleUI("Brainrot ESP", function() return CONFIG.ESP.BrainrotESP.Enabled end, function(state)
+    _G.createCircularToggleUI("Brainrot ESP", function() return CONFIG.ESP.BrainrotESP.Enabled end, function(state)
         CONFIG.ESP.BrainrotESP.Enabled = state
         _G.saveSettings()
         if state then
@@ -6229,7 +6203,7 @@ createButton(_G.togglesSection, "Toggle Brainrot ESP", function()
 end)
 
 createButton(_G.togglesSection, "Toggle Mobile Desync", function()
-    createCircularToggleUI("Mobile Desync", function() return _G.mobileDesyncEnabled end, function(state)
+    _G.createCircularToggleUI("Mobile Desync", function() return _G.mobileDesyncEnabled end, function(state)
         _G.mobileDesyncEnabled = state
         -- Don't save settings for mobile desync (fast flag can't be disabled)
         if state then
@@ -7070,39 +7044,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Delta / mobil: ekranda her zaman gorunen acma butonu (RightShift yok)
-if _G.isMobile or _G.isDelta then
-    local fabGui = createProtectedScreenGui("KenHub_MobileToggle")
-    fabGui.DisplayOrder = 1000000
-    fabGui.Enabled = true
-
-    local fabBtn = Instance.new("TextButton")
-    fabBtn.Name = "OpenPanel"
-    fabBtn.Size = UDim2.new(0, 54, 0, 54)
-    fabBtn.Position = UDim2.new(0, 14, 0.55, -27)
-    fabBtn.BackgroundColor3 = CONFIG.Colors.Accent
-    fabBtn.Text = "KH"
-    fabBtn.Font = Enum.Font.GothamBold
-    fabBtn.TextSize = 18
-    fabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    fabBtn.AutoButtonColor = false
-    fabBtn.ZIndex = 10
-    fabBtn.Parent = fabGui
-    Instance.new("UICorner", fabBtn).CornerRadius = UDim.new(1, 0)
-    local fabStroke = Instance.new("UIStroke", fabBtn)
-    fabStroke.Color = Color3.fromRGB(255, 255, 255)
-    fabStroke.Thickness = 1.5
-
-    local function onFabPress()
-        setMainGuiVisible(isGuiHidden)
-    end
-    fabBtn.MouseButton1Click:Connect(onFabPress)
-    fabBtn.TouchTap:Connect(onFabPress)
-    fabBtn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            onFabPress()
-        end
-    end)
+_G.KenHubPanelToggle = function()
+    setMainGuiVisible(isGuiHidden)
 end
 
 minimizeBtn.MouseButton1Click:Connect(function()
@@ -7367,34 +7310,24 @@ local function initialize()
     end
 end
 
-initialize()
-
--- GUI gorunurluk garantisi (Delta gethui gecikmesi icin)
-task.defer(function()
-    task.wait(0.5)
+local initOk, initErr = xpcall(initialize, debug.traceback)
+if not initOk then
+    pcall(function() _G.KenHubError(initErr) end)
+else
+    pcall(function() _G.KenHubReady() end)
     pcall(function()
-        if screenGui then
-            screenGui.Enabled = true
-            if not screenGui.Parent then
-                parentScreenGui(screenGui)
-            end
-        end
-        if mainFrame then
-            mainFrame.Visible = true
-        end
-    end)
-end)
-
-pcall(function()
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Ken HUB v1.67",
-        Text = (_G.isDelta or _G.isMobile)
+        KenNotify("Ken HUB v1.67", (_G.isDelta or _G.isMobile)
             and "Yuklendi! Sol alttaki KH butonuna dokun"
-            or "Yuklendi! RightShift veya Insert = panel ac/kapa",
-        Duration = 6,
-    })
+            or "Yuklendi! RightShift veya Insert = panel")
+    end)
+    print("[Ken HUB] Panel hazir | Executor:", _G.executor)
+end
+
+task.delay(4, function()
+    if not _G.KenHubMainFrame or not _G.KenHubMainFrame.Parent then
+        _G.KenHubError("Panel olusmadi. Loader.lua kullan ve F8 konsolunu kontrol et.")
+    end
 end)
-print("[Ken HUB] Panel yuklendi.", (_G.isDelta or _G.isMobile) and "KH butonuna dokun." or "RightShift ile ac/kapa.")
 
 --=========================================================
 -- Cleanup on Script End
