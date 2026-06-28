@@ -6776,46 +6776,47 @@ task.delay(4, function()
 end)
 
 --=========================================================
--- Cleanup on Script End
+-- Cleanup (client-safe - BindToClose sunucu-only)
 --=========================================================
-game:BindToClose(function()
-    local success, _ = pcall(function()
-        -- Disable all features
+local function kenHubCleanup()
+    pcall(function()
         if _G.ESP_Enabled then disableESP() end
         if _G.PlotESP_Enabled then disablePlotESP() end
-        if isServerHopActive then toggleServerHop(false) end
-        if jumpSwitch and jumpSwitch.get and jumpSwitch.set then
-        if jumpSwitch.get() then jumpSwitch.set(false) end
+        if _G.toggleServerHop then _G.toggleServerHop(false) end
+        if jumpSwitch and jumpSwitch.get and jumpSwitch.set and jumpSwitch.get() then
+            jumpSwitch.set(false)
         end
-        if speedSwitch and speedSwitch.get and speedSwitch.set then
-        if speedSwitch.get() then speedSwitch.set(false) end
+        if speedSwitch and speedSwitch.get and speedSwitch.set and speedSwitch.get() then
+            speedSwitch.set(false)
         end
-        if invisibilitySwitch and invisibilitySwitch.get then
-        if invisibilitySwitch.get() then setInvisibility(false) end
+        if invisibilitySwitch and invisibilitySwitch.get and invisibilitySwitch.get() then
+            setInvisibility(false)
         end
-        if unhittableSwitchInstance and unhittableSwitchInstance.get and unhittableSwitchInstance.set then
-        if unhittableSwitchInstance.get() then unhittableSwitchInstance.set(false) end
+        if unhittableSwitchInstance and unhittableSwitchInstance.get and unhittableSwitchInstance.set and unhittableSwitchInstance.get() then
+            unhittableSwitchInstance.set(false)
         end
-        if resizeSwitchInstance and resizeSwitchInstance.get and resizeSwitchInstance.set then
-        if resizeSwitchInstance.get() then resizeSwitchInstance.set(false) end
+        if resizeSwitchInstance and resizeSwitchInstance.get and resizeSwitchInstance.set and resizeSwitchInstance.get() then
+            resizeSwitchInstance.set(false)
         end
-        if flingSwitchInstance and flingSwitchInstance.get and flingSwitchInstance.set then
-        if flingSwitchInstance.get() then flingSwitchInstance.set(false) end
+        if flingSwitchInstance and flingSwitchInstance.get and flingSwitchInstance.set and flingSwitchInstance.get() then
+            flingSwitchInstance.set(false)
         end
-        if CloneFlight_Enabled then disableCloneFlight() end
-        if isCarpetMode then toggleCarpetMode(false) end
         if isLaserCapeFiring then disableLaserCape() end
-        -- Disable Desync features
         if _G.mobileDesyncEnabled then disableMobileDesync() end
-        -- Disable Ragdoll Desync
-        if CONFIG.Movement.RagdollDesync and CONFIG.Movement.RagdollDesync.Enabled then (_G.disableRagdollDesync or function() end)() end
-        -- Disable Brainrot ESP
+        if CONFIG.Movement.RagdollDesync and CONFIG.Movement.RagdollDesync.Enabled then
+            (_G.disableRagdollDesync or function() end)()
+        end
         if CONFIG.ESP.BrainrotESP.Enabled then disableBrainrotESP() end
         if CONFIG.Automation.PetSnipe.Enabled then disablePetSnipe() end
     end)
-    if not success then
-        warn("Failed to clean up on script close")
-    end
+end
+
+_G.KenHubCleanup = kenHubCleanup
+
+pcall(function()
+    player.AncestryChanged:Connect(function(_, parent)
+        if not parent then kenHubCleanup() end
+    end)
 end)
 
 -- ===== ULTRA-COMPACT ESP =====
