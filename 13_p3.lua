@@ -1,17 +1,23 @@
 -- Ken HUB Part 3/5 - Sections + Automation
--- Ken HUB Part 3/5 - Sections + Features
-local SCRIPT_VERSION = "1.71"
+-- Ken HUB Part 3/5 - Sections + Automation
+local SCRIPT_VERSION = "1.72"
 local K = _G.KenHubState
-if not K or not K.createSwitch then
+if not K or not K.createSwitch or not K.createSection then
     error("[Ken HUB] Part 2 yuklenmedi - Loader.lua kullan")
 end
 local CONFIG = K.CONFIG
 local player = K.player
 local username = K.username
+local RunService = K.RunService
+local TweenService = K.TweenService
+local ReplicatedStorage = K.ReplicatedStorage
+local ProximityPromptService = K.ProximityPromptService
+local UserInputService = game:GetService("UserInputService")
+local createSection = K.createSection
+local createTabButton = K.createTabButton
 local createSwitch = K.createSwitch
 local createSectionHeader = K.createSectionHeader
 local createNumberInput = K.createNumberInput
-local createButton = K.createButton
 local mainFrame = K.mainFrame
 local screenGui = K.screenGui
 local settingsContent = K.settingsContent
@@ -29,6 +35,9 @@ local setInvisibility = K.setInvisibility
 local enablePetSnipe = K.enablePetSnipe
 local disablePetSnipe = K.disablePetSnipe
 local playerPlot = K.playerPlot
+local character = K.character
+local humanoid = K.humanoid
+local humanoidRootPart = K.humanoidRootPart
 -- UI Sections Setup
 --=========================================================
 _G.homeSection = createSection("Home")
