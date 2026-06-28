@@ -1,6 +1,7 @@
 --=========================================================
--- Ken HUB v1.67 - Delta Executor optimized bootstrap
+-- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
+local SCRIPT_VERSION = "1.68"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -439,10 +440,27 @@ local CONFIG = {
     Automation = {
         PetSnipe = {
             Enabled = false,
-            MinGeneration = 100e6, -- 100M/s ve uzeri (Secret disi ustun petler)
+            MinTier = "Rare",
+            UseMinGeneration = true,
+            MinGeneration = 100e6,
             DeliveryDelay = 2.5,
             ScanInterval = 1.5,
             StealCooldown = 4,
+            Rarities = {
+                common = false,
+                uncommon = false,
+                rare = true,
+                epic = true,
+                legendary = true,
+                mythic = true,
+                secret = true,
+                celestial = true,
+                divine = true,
+                og = true,
+                god = true,
+                limited = true,
+                exclusive = true,
+            },
         },
     },
     Movement = {
@@ -722,6 +740,15 @@ local function validateCONFIG()
     CONFIG.Automation.PetSnipe.DeliveryDelay = CONFIG.Automation.PetSnipe.DeliveryDelay or 2.5
     CONFIG.Automation.PetSnipe.ScanInterval = CONFIG.Automation.PetSnipe.ScanInterval or 1.5
     CONFIG.Automation.PetSnipe.StealCooldown = CONFIG.Automation.PetSnipe.StealCooldown or 4
+    CONFIG.Automation.PetSnipe.MinTier = CONFIG.Automation.PetSnipe.MinTier or "Rare"
+    CONFIG.Automation.PetSnipe.UseMinGeneration = CONFIG.Automation.PetSnipe.UseMinGeneration ~= false
+    if not CONFIG.Automation.PetSnipe.Rarities then
+        CONFIG.Automation.PetSnipe.Rarities = {
+            common = false, uncommon = false, rare = true, epic = true,
+            legendary = true, mythic = true, secret = true, celestial = true,
+            divine = true, og = true, god = true, limited = true, exclusive = true,
+        }
+    end
     
     -- Legacy: BrainrotESP yanlislikla Movement altinda kaydedilmisse tasi
     if CONFIG.Movement and CONFIG.Movement.BrainrotESP and not CONFIG.ESP.BrainrotESP.Enabled then
@@ -1314,18 +1341,64 @@ local function getRemainingTime(plot)
 end
 
 --=========================================================
--- Pet Snipe System (Secret + superior pets)
+-- Pet Snipe System (configurable rarity catalog)
 --=========================================================
-local PET_SNIPE_RARITIES = {
-    secret = true,
-    celestial = true,
-    divine = true,
-    og = true,
-    god = true,
-    limited = true,
-    exclusive = true,
-    mythic = true,
+local PET_TIER_ORDER = {
+    "common", "uncommon", "rare", "epic", "legendary", "mythic",
+    "secret", "celestial", "divine", "og", "god", "limited", "exclusive",
 }
+local PET_TIER_LABELS = {
+    common = "Common", uncommon = "Uncommon", rare = "Rare", epic = "Epic",
+    legendary = "Legendary", mythic = "Mythic", secret = "Secret",
+    celestial = "Celestial", divine = "Divine", og = "OG", god = "God",
+    limited = "Limited", exclusive = "Exclusive",
+}
+local PET_TIER_RANK = {}
+for i, tier in ipairs(PET_TIER_ORDER) do
+    PET_TIER_RANK[tier] = i
+end
+
+local function ensurePetSnipeRarities()
+    if not CONFIG.Automation then CONFIG.Automation = {} end
+    if not CONFIG.Automation.PetSnipe then CONFIG.Automation.PetSnipe = {} end
+    if not CONFIG.Automation.PetSnipe.Rarities then
+        CONFIG.Automation.PetSnipe.Rarities = {}
+    end
+    for _, tier in ipairs(PET_TIER_ORDER) do
+        if CONFIG.Automation.PetSnipe.Rarities[tier] == nil then
+            CONFIG.Automation.PetSnipe.Rarities[tier] = PET_TIER_RANK[tier] >= (PET_TIER_RANK.rare or 3)
+        end
+    end
+end
+
+function _G.applyPetSnipeMinTier(minTier)
+    ensurePetSnipeRarities()
+    local rank = PET_TIER_RANK[string.lower(tostring(minTier or "rare"))] or PET_TIER_RANK.rare
+    for i, tier in ipairs(PET_TIER_ORDER) do
+        CONFIG.Automation.PetSnipe.Rarities[tier] = i >= rank
+    end
+    CONFIG.Automation.PetSnipe.MinTier = minTier or "Rare"
+    if _G.petSnipeRaritySwitches then
+        for tier, sw in pairs(_G.petSnipeRaritySwitches) do
+            if sw and sw.set then
+                sw.set(CONFIG.Automation.PetSnipe.Rarities[tier] == true)
+            end
+        end
+    end
+    pcall(function() _G.saveSettings() end)
+end
+
+ensurePetSnipeRarities()
+if CONFIG.Automation.PetSnipe.MinTier and CONFIG.Automation.PetSnipe.MinTier ~= "Custom" then
+    local saved = CONFIG.Automation.PetSnipe.Rarities
+    local hasAny = false
+    for _, tier in ipairs(PET_TIER_ORDER) do
+        if saved[tier] then hasAny = true break end
+    end
+    if not hasAny then
+        _G.applyPetSnipeMinTier(CONFIG.Automation.PetSnipe.MinTier)
+    end
+end
 
 local DeliveryStealRemote
 pcall(function()
@@ -1365,21 +1438,25 @@ end
 
 local function isSnipeTargetPet(overhead)
     if not overhead or not overhead:IsA("BillboardGui") then return false end
+    ensurePetSnipeRarities()
+    local rarities = CONFIG.Automation.PetSnipe.Rarities
 
     local rarityLabel = overhead:FindFirstChild("Rarity") or overhead:FindFirstChild("Mutation")
     if rarityLabel and rarityLabel:IsA("TextLabel") then
         local rarityText = string.lower(rarityLabel.Text)
-        for tier in pairs(PET_SNIPE_RARITIES) do
-            if string.find(rarityText, tier, 1, true) then
+        for tier, enabled in pairs(rarities) do
+            if enabled and string.find(rarityText, tier, 1, true) then
                 return true
             end
         end
     end
 
-    local genLabel = overhead:FindFirstChild("Generation")
-    if genLabel and genLabel:IsA("TextLabel") then
-        local minGen = (CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.MinGeneration) or 100e6
-        return parsePetGeneration(genLabel.Text) >= minGen
+    if CONFIG.Automation.PetSnipe.UseMinGeneration ~= false then
+        local genLabel = overhead:FindFirstChild("Generation")
+        if genLabel and genLabel:IsA("TextLabel") then
+            local minGen = CONFIG.Automation.PetSnipe.MinGeneration or 100e6
+            return parsePetGeneration(genLabel.Text) >= minGen
+        end
     end
 
     return false
@@ -1650,7 +1727,7 @@ function enablePetSnipe()
         task.cancel(_G.petSnipeState.thread)
     end
     _G.petSnipeState.thread = task.spawn(petSnipeLoop)
-    print("[Pet Snipe] Aktif - Secret ve ustun petler izleniyor.")
+    print("[Pet Snipe] Aktif | Katalog: " .. tostring(CONFIG.Automation.PetSnipe.MinTier or "Custom"))
 end
 
 function disablePetSnipe()
@@ -3578,7 +3655,7 @@ createSectionHeader(_G.homeSection, "Welcome")
 local welcomeLabel = Instance.new("TextLabel")
 welcomeLabel.Size = UDim2.new(1, -20, 0, 100)
 welcomeLabel.BackgroundTransparency = 1
-welcomeLabel.Text = "Welcome to Ken HUB v1.67\nBest Free Steal a Brainrot Script.\nalways updating each week! We are Ken HUB!\nJoin our community: " .. CONFIG.DiscordLink
+welcomeLabel.Text = "Welcome to Ken HUB v" .. SCRIPT_VERSION .. "\nBest Free Steal a Brainrot Script.\nalways updating each week! We are Ken HUB!\nJoin our community: " .. CONFIG.DiscordLink
 welcomeLabel.TextColor3 = CONFIG.Colors.SubText
 welcomeLabel.TextSize = 14
 welcomeLabel.Font = Enum.Font.Gotham
@@ -5037,9 +5114,9 @@ createButton(_G.serverSection, "Join Smallest Server", _G.joinSmallestServer)
 -- Automation Section
 createSectionHeader(_G.automationSection, "Pet Snipe")
 local petSnipeInfo = Instance.new("TextLabel")
-petSnipeInfo.Size = UDim2.new(1, -20, 0, 56)
+petSnipeInfo.Size = UDim2.new(1, -20, 0, 44)
 petSnipeInfo.BackgroundTransparency = 1
-petSnipeInfo.Text = "Secret ve ustun petleri otomatik calip kendi basene getirir.\n100M/s+ veya Secret/Celestial/Divine tier hedeflenir."
+petSnipeInfo.Text = "Secili rarity ve min M/s hedeflerini otomatik calip base'e getirir."
 petSnipeInfo.TextColor3 = CONFIG.Colors.SubText
 petSnipeInfo.TextSize = 13
 petSnipeInfo.Font = Enum.Font.Gotham
@@ -5048,16 +5125,42 @@ petSnipeInfo.TextYAlignment = Enum.TextYAlignment.Top
 petSnipeInfo.TextWrapped = true
 petSnipeInfo.Parent = _G.automationSection
 
-local petSnipeSwitch = createSwitch(_G.automationSection, "Secret Pet Snipe", CONFIG.Automation.PetSnipe.Enabled, function(on)
+local petSnipeSwitch = createSwitch(_G.automationSection, "Pet Snipe", CONFIG.Automation.PetSnipe.Enabled, function(on)
     CONFIG.Automation.PetSnipe.Enabled = on
     _G.saveSettings()
-    if on then
-        enablePetSnipe()
-    else
-        disablePetSnipe()
-    end
+    if on then enablePetSnipe() else disablePetSnipe() end
 end)
 _G.petSnipeSwitch = petSnipeSwitch
+
+createSectionHeader(_G.automationSection, "Hizli Katalog Preset")
+createButton(_G.automationSection, "Rare ve ustu", function() _G.applyPetSnipeMinTier("Rare") end)
+createButton(_G.automationSection, "Epic ve ustu", function() _G.applyPetSnipeMinTier("Epic") end)
+createButton(_G.automationSection, "Legendary ve ustu", function() _G.applyPetSnipeMinTier("Legendary") end)
+createButton(_G.automationSection, "Secret ve ustu", function() _G.applyPetSnipeMinTier("Secret") end)
+createButton(_G.automationSection, "Sadece Mythic+", function() _G.applyPetSnipeMinTier("Mythic") end)
+
+createSectionHeader(_G.automationSection, "Ozel Rarity Secimi")
+_G.petSnipeRaritySwitches = {}
+for _, tier in ipairs(PET_TIER_ORDER) do
+    local label = PET_TIER_LABELS[tier] or tier
+    local sw = createSwitch(_G.automationSection, label, CONFIG.Automation.PetSnipe.Rarities[tier] == true, function(on)
+        ensurePetSnipeRarities()
+        CONFIG.Automation.PetSnipe.Rarities[tier] = on
+        CONFIG.Automation.PetSnipe.MinTier = "Custom"
+        _G.saveSettings()
+    end)
+    _G.petSnipeRaritySwitches[tier] = sw
+end
+
+createSectionHeader(_G.automationSection, "Min Generation Filtresi")
+createSwitch(_G.automationSection, "Min M/s filtresi aktif", CONFIG.Automation.PetSnipe.UseMinGeneration ~= false, function(on)
+    CONFIG.Automation.PetSnipe.UseMinGeneration = on
+    _G.saveSettings()
+end)
+createNumberInput(_G.automationSection, "Min M/s (ornek: 100 = 100M)", (CONFIG.Automation.PetSnipe.MinGeneration or 100e6) / 1e6, function(value)
+    CONFIG.Automation.PetSnipe.MinGeneration = math.clamp(value, 0, 99999) * 1e6
+    _G.saveSettings()
+end)
 
 
 -- Brainrot ESP toggle will be created after function definitions
@@ -6762,7 +6865,7 @@ if not initOk then
 else
     pcall(function() _G.KenHubReady() end)
     pcall(function()
-        KenNotify("Ken HUB v1.67", (_G.isDelta or _G.isMobile)
+        KenNotify("Ken HUB v" .. SCRIPT_VERSION, (_G.isDelta or _G.isMobile)
             and "Yuklendi! Sol alttaki KH butonuna dokun"
             or "Yuklendi! RightShift veya Insert = panel")
     end)
@@ -6776,7 +6879,7 @@ task.delay(4, function()
 end)
 
 --=========================================================
--- Cleanup (client-safe - BindToClose sunucu-only)
+-- Client cleanup (executor/local only)
 --=========================================================
 local function kenHubCleanup()
     pcall(function()
