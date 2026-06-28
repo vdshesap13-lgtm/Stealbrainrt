@@ -1,6 +1,6 @@
 -- Ken HUB Part 5/5 - Init + Cleanup
 -- Ken HUB Part 5/5 - Init + Cleanup
-local SCRIPT_VERSION = "1.78"
+local SCRIPT_VERSION = "1.79"
 local B = _G.KenHubBundle
 if not B or not B.mainFrame or not B.createSwitch then
     _G.KenHubError("Part 4 export eksik - Loader ile 5 parcayi sirayla yukle")
@@ -53,6 +53,9 @@ local plotColorButton = B.plotColorButton
 local disablePetSnipe = B.disablePetSnipe
 local enablePetSnipe = B.enablePetSnipe
 local petSnipeSwitch = B.petSnipeSwitch
+local enableNoclip = B.enableNoclip
+local disableNoclip = B.disableNoclip
+local noclipSwitch = B.noclipSwitch
 local setInvisibility = B.setInvisibility
 local findPlayerPlot = B.findPlayerPlot
 local playerPlot = B.getPlayerPlot and B.getPlayerPlot() or nil
@@ -643,6 +646,11 @@ player.CharacterAdded:Connect(function(newCharacter)
             pcall(function() disableHelicopter() end)
             pcall(function() enableHelicopter(newCharacter) end)
         end
+
+        if CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then
+            pcall(function() disableNoclip() end)
+            pcall(function() enableNoclip() end)
+        end
         
         -- Re-enable Mobile Desync if enabled
         if _G.mobileDesyncEnabled then
@@ -787,6 +795,7 @@ local function kenHubCleanup()
         end
         if CONFIG.ESP.BrainrotESP.Enabled then disableBrainrotESP() end
         if CONFIG.Automation.PetSnipe.Enabled then disablePetSnipe() end
+        if CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then disableNoclip() end
     end)
 end
 
@@ -922,6 +931,15 @@ end)
 
 task.delay(3, function()
     pcall(function()
+        if CONFIG.Movement and CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then
+            local startFn = enableNoclip or _G.enableNoclip
+            if type(startFn) == "function" then
+                startFn()
+                if noclipSwitch and noclipSwitch.set then
+                    noclipSwitch.set(true)
+                end
+            end
+        end
         if CONFIG.Automation and CONFIG.Automation.PetSnipe and CONFIG.Automation.PetSnipe.Enabled then
             local startFn = enablePetSnipe or _G.enablePetSnipe
             if type(startFn) == "function" then
