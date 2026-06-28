@@ -15,9 +15,11 @@ _G.Services = {
 }
 _G.player = _G.Services.Players.LocalPlayer
 pcall(function()
-    _G.character = _G.player.Character or _G.player.CharacterAdded:Wait()
-    _G.humanoid = _G.character:FindFirstChildOfClass("Humanoid")
-    _G.humanoidRootPart = _G.character:FindFirstChild("HumanoidRootPart")
+    _G.character = _G.player.Character
+    if _G.character then
+        _G.humanoid = _G.character:FindFirstChildOfClass("Humanoid")
+        _G.humanoidRootPart = _G.character:FindFirstChild("HumanoidRootPart")
+    end
 end)
 
 -- Anti-debug: sadece decompiler kaynak dosyalarinda calisir (loadstring/HttpGet engellenmez)
@@ -583,170 +585,128 @@ end
 
 --=============================== Bootstrap ===============================--
 
-do
-	-- Reduced monitoring to prevent performance issues
-	-- Only monitor new descendants, not existing ones
-	AE.S.CoreGui.DescendantAdded:Connect(function(d)
-		-- Only check for obvious threats, not everything
-		pcall(function()
-			AE.checkDex(d)
-		end)
-	end)
-
-	-- Remote baseline + scanner (less aggressive)
-	pcall(function()
-		AE.captureOriginals()
-		AE.startHookScan()
-	end)
-
-	-- Print hook (simplified)
-	AE.installPrintHook()
-end
-
--- Mobile Executor Detection & Compatibility
+-- Executor algilama (AE bootstrap'tan ONCE - Delta hook taramasi kick atmasin)
 _G.detectExecutor = function()
     _G.executor = "unknown"
-    if getgenv and getgenv().executor then
+    if identifyexecutor then
+        local ok, name = pcall(identifyexecutor)
+        if ok and name then
+            _G.executor = tostring(name)
+        end
+    end
+    if _G.executor == "unknown" and getgenv and getgenv().executor then
         _G.executor = getgenv().executor
-    elseif syn and syn.request then
+    elseif _G.executor == "unknown" and syn and syn.request then
         _G.executor = "synapse"
-    elseif krnl and krnl.request then
+    elseif _G.executor == "unknown" and krnl and krnl.request then
         _G.executor = "krnl"
-    elseif fluxus and fluxus.request then
+    elseif _G.executor == "unknown" and fluxus and fluxus.request then
         _G.executor = "fluxus"
-    elseif is_sirhurt_closure then
+    elseif _G.executor == "unknown" and is_sirhurt_closure then
         _G.executor = "sirhurt"
-    elseif identifyexecutor then
-        _G.executor = identifyexecutor()
     end
     return _G.executor
 end
 
 _G.executor = _G.detectExecutor()
-_G.isMobile = _G.executor:find("mobile") or _G.executor:find("android") or _G.executor:find("ios")
+local _executorLower = string.lower(tostring(_G.executor))
+_G.isDelta = _executorLower:find("delta") ~= nil
+_G.isMobile = _G.isDelta
+    or _executorLower:find("mobile") ~= nil
+    or _executorLower:find("android") ~= nil
+    or _executorLower:find("ios") ~= nil
+    or (_G.Services.UserInputService.TouchEnabled and not _G.Services.UserInputService.KeyboardEnabled)
 
--- Enhanced UI Creation for Mobile Compatibility
+if _G.isDelta then
+    AE.CFG.KickEnabled = false
+    AE.CFG.ScanInterval = 9999
+    print("[Ken HUB] Delta Executor algilandi - guvenli mod aktif")
+end
+
+if not _G.isDelta then
+do
+	AE.S.CoreGui.DescendantAdded:Connect(function(d)
+		pcall(function()
+			AE.checkDex(d)
+		end)
+	end)
+
+	pcall(function()
+		AE.captureOriginals()
+		AE.startHookScan()
+	end)
+
+	AE.installPrintHook()
+end
+end
+
+-- Delta / mobil GUI parent (gethui -> PlayerGui -> CoreGui)
 _G.createMobileCompatibleGui = function(name)
-    _G.gui = nil
-    
-    -- Executor-specific optimizations
-    if _G.isMobile then
-        -- Mobile-specific methods
-        _G.mobileMethods = {
-            function()
-                if syn and syn.protect_gui then
-                    _G.gui = Instance.new("ScreenGui")
-                    _G.gui.Name = name
-                    _G.gui.ResetOnSpawn = false
-                    _G.gui.Parent = game:GetService("CoreGui")
-                    syn.protect_gui(_G.gui)
-                    _G.gui.IgnoreGuiInset = true
-                    return _G.gui
-                end
-            end,
-            function()
-                if gethui then
-                    _G.gui = Instance.new("ScreenGui")
-                    _G.gui.Name = name
-                    _G.gui.ResetOnSpawn = false
-                    _G.gui.Parent = gethui()
-                    _G.gui.IgnoreGuiInset = true
-                    return _G.gui
-                end
-            end,
-            function()
-                _G.gui = Instance.new("ScreenGui")
-                _G.gui.Name = name
-                _G.gui.ResetOnSpawn = false
-                _G.gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-                _G.gui.IgnoreGuiInset = true
-                return _G.gui
-            end
-        }
-        
-        for i, method in ipairs(_G.mobileMethods) do
-            _G.success, _G.result = pcall(method)
-            if _G.success and _G.result then
-                return _G.result
-            end
+    local PlayersSvc = game:GetService("Players")
+    local CoreGuiSvc = game:GetService("CoreGui")
+    local gui = Instance.new("ScreenGui")
+    gui.Name = name
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.DisplayOrder = 999999
+    gui.Enabled = true
+
+    local function tryParent(label, fn)
+        local ok, success = pcall(fn)
+        if ok and success and gui.Parent then
+            print("[Ken HUB] GUI parent:", label)
+            return true
         end
-    else
-        -- PC-specific methods
-        _G.pcMethods = {
-            function() 
-                if syn and syn.protect_gui then
-                    _G.gui = Instance.new("ScreenGui")
-                    _G.gui.Name = name
-                    _G.gui.ResetOnSpawn = false
-                    _G.gui.Parent = game:GetService("CoreGui")
-                    syn.protect_gui(_G.gui)
-                    return _G.gui
-                end
-            end,
-            function()
-                if gethui then
-                    _G.gui = Instance.new("ScreenGui")
-                    _G.gui.Name = name
-                    _G.gui.ResetOnSpawn = false
-                    _G.gui.Parent = gethui()
-                    return _G.gui
-                end
-            end,
-            function()
-                if get_hidden_ui then
-                    _G.gui = Instance.new("ScreenGui")
-                    _G.gui.Name = name
-                    _G.gui.ResetOnSpawn = false
-                    _G.gui.Parent = get_hidden_ui()
-                    return _G.gui
-                end
-            end,
-            function()
-                _G.gui = Instance.new("ScreenGui")
-                _G.gui.Name = name
-                _G.gui.ResetOnSpawn = false
-                _G.gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-                return _G.gui
-            end
-        }
-        
-        for i, method in ipairs(_G.pcMethods) do
-            _G.success, _G.result = pcall(method)
-            if _G.success and _G.result then
-                return _G.result
-            end
-        end
+        return false
     end
-    
-    pcall(function()
-        _G.gui = Instance.new("ScreenGui")
-        _G.gui.Name = name
-        _G.gui.ResetOnSpawn = false
-        _G.gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-        local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
-        _G.gui.Parent = pg or game:GetService("CoreGui")
-        if syn and syn.protect_gui then
-            pcall(syn.protect_gui, _G.gui)
-        end
+
+    if gethui then
+        if tryParent("gethui", function()
+            local hui = gethui()
+            if typeof(hui) == "Instance" then
+                gui.Parent = hui
+                return gui.Parent == hui
+            end
+        end) then return gui end
+    end
+
+    if tryParent("PlayerGui", function()
+        local pg = PlayersSvc.LocalPlayer:FindFirstChild("PlayerGui")
+            or PlayersSvc.LocalPlayer:WaitForChild("PlayerGui", 10)
+        gui.Parent = pg
+        return pg ~= nil
+    end) then return gui end
+
+    if get_hidden_ui then
+        if tryParent("get_hidden_ui", function()
+            gui.Parent = get_hidden_ui()
+            return gui.Parent ~= nil
+        end) then return gui end
+    end
+
+    tryParent("CoreGui", function()
+        gui.Parent = CoreGuiSvc
+        return true
     end)
-    return _G.gui
+
+    return gui.Parent and gui or nil
 end
 
 -- Mobile Touch Optimization
 _G.optimizeForMobile = function(gui)
-    if _G.isMobile then
-        pcall(function()
-            gui.IgnoreGuiInset = true
-            gui.ResetOnSpawn = false
-            gui.DisplayOrder = 999999999
-            
-            -- Mobile-specific attributes
+    if not gui then return end
+    pcall(function()
+        gui.IgnoreGuiInset = true
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 999999
+        if _G.isMobile or _G.isDelta then
             if gui.SetAttribute then
                 gui:SetAttribute("MobileOptimized", true)
                 gui:SetAttribute("TouchEnabled", true)
             end
-        end)
-    end
+        end
+    end)
 end
 
 --// Services
@@ -1594,95 +1554,48 @@ local safeui = getSafeUiParent()
 
 local function parentScreenGui(gui)
     if not gui then return false end
-    local parented = false
-    pcall(function()
-        if gethui then
-            gui.Parent = gethui()
-            parented = true
-        elseif get_hidden_ui then
-            gui.Parent = get_hidden_ui()
-            parented = true
-        end
-    end)
-    if not parented then
-        pcall(function()
-            local playerGui = player:WaitForChild("PlayerGui", 5)
-            if playerGui then
-                gui.Parent = playerGui
-                parented = true
+    if gethui then
+        local ok = pcall(function()
+            local hui = gethui()
+            if typeof(hui) == "Instance" then
+                gui.Parent = hui
             end
         end)
+        if ok and gui.Parent then return true end
     end
-    if not parented then
+    local okPg = pcall(function()
+        local playerGui = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 10)
+        if playerGui then
+            gui.Parent = playerGui
+        end
+    end)
+    if okPg and gui.Parent then return true end
+    pcall(function()
         gui.Parent = CoreGui
-    end
-    if syn and syn.protect_gui then
-        pcall(syn.protect_gui, gui)
-    end
-    return true
+    end)
+    return gui.Parent ~= nil
 end
 
 -- Helper function to create protected ScreenGui
 local function createProtectedScreenGui(name, displayOrder)
-    -- Use mobile-compatible GUI creation first
     _G.screenGui = _G.createMobileCompatibleGui(name)
-    if _G.screenGui then
-        _G.screenGui.DisplayOrder = displayOrder or 2^31-1
-        -- Apply mobile optimizations
-        _G.optimizeForMobile(_G.screenGui)
-        -- Apply additional safety measures
-        pcall(function()
-            _G.screenGui.IgnoreGuiInset = true
-            _G.screenGui.ResetOnSpawn = false
-            if _G.screenGui.SetAttribute then
-                _G.screenGui:SetAttribute("Hidden", true)
-                _G.screenGui:SetAttribute("Executor", _G.executor)
-            end
-        end)
-        return _G.screenGui
-    end
-    
-    -- Fallback to original method
-    _G.screenGui = Instance.new("ScreenGui")
-    _G.screenGui.Name = name
-    _G.screenGui.ResetOnSpawn = false
-    _G.screenGui.DisplayOrder = displayOrder or 2^31-1
-    _G.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    parentScreenGui(_G.screenGui)
-    
-    -- Apply GUI protection if available
-    if syn and syn.protect_gui then
-        syn.protect_gui(_G.screenGui)
-    end
-    
-    -- Apply mobile optimizations
-    _G.optimizeForMobile(_G.screenGui)
-    
-    -- Additional safety measures
-    pcall(function()
-        -- Make GUI less detectable
-        _G.screenGui.IgnoreGuiInset = true
+    if not _G.screenGui then
+        _G.screenGui = Instance.new("ScreenGui")
+        _G.screenGui.Name = name
         _G.screenGui.ResetOnSpawn = false
-        
-        -- Hide from CoreGui detection if possible
-        if _G.screenGui.SetAttribute then
-            _G.screenGui:SetAttribute("Hidden", true)
-            _G.screenGui:SetAttribute("Executor", _G.executor)
-        end
-    end)
-    
+        _G.screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        parentScreenGui(_G.screenGui)
+    end
+    _G.screenGui.DisplayOrder = displayOrder or 999999
+    _G.screenGui.Enabled = true
+    _G.optimizeForMobile(_G.screenGui)
     return _G.screenGui
 end
 
--- Helper function to protect individual GUI elements
+-- Helper function to protect individual GUI elements (Delta'da syn.protect_gui yok)
 local function protectGuiElement(element)
     pcall(function()
-        if syn and syn.protect_gui then
-            syn.protect_gui(element)
-        end
-        
-        -- Additional protection measures
-        if element.SetAttribute then
+        if element and element.SetAttribute then
             element:SetAttribute("Protected", true)
         end
     end)
@@ -2427,14 +2340,23 @@ end
 
 
 local screenGui = createProtectedScreenGui((namePrefix or '') .. 'ESPVisuals')
+screenGui.Enabled = true
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "Main"
-mainFrame.Size = CONFIG.UI.FrameSize
-mainFrame.Position = UDim2.new(0.5, -290, 0.5, -190)
+if _G.isMobile or _G.isDelta then
+    mainFrame.Size = UDim2.new(0.94, 0, 0.78, 0)
+    mainFrame.Position = UDim2.new(0.03, 0, 0.08, 0)
+    mainFrame.AnchorPoint = Vector2.new(0, 0)
+    mainFrame.Draggable = false
+else
+    mainFrame.Size = CONFIG.UI.FrameSize
+    mainFrame.Position = UDim2.new(0.5, -290, 0.5, -190)
+    mainFrame.Draggable = true
+end
 mainFrame.BackgroundColor3 = CONFIG.Colors.Panel
 mainFrame.Active = true
-mainFrame.Draggable = true
+mainFrame.Visible = true
 mainFrame.Parent = screenGui
 protectGuiElement(mainFrame)
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
@@ -7109,6 +7031,19 @@ end)
 local isMinimized = false
 local isGuiHidden = false
 
+local function getMainPanelSize()
+    if isMinimized then
+        if _G.isMobile or _G.isDelta then
+            return UDim2.new(0.94, 0, 0, 40)
+        end
+        return CONFIG.UI.MinimizedSize
+    end
+    if _G.isMobile or _G.isDelta then
+        return UDim2.new(0.94, 0, 0.78, 0)
+    end
+    return CONFIG.UI.FrameSize
+end
+
 local function setMainGuiVisible(visible)
     isGuiHidden = not visible
     if mainFrame then
@@ -7117,14 +7052,13 @@ local function setMainGuiVisible(visible)
     if not visible and settingsFrame then
         settingsFrame.Visible = false
     end
-    if visible and isMinimized then
-        mainFrame.Size = CONFIG.UI.MinimizedSize
-        sidebar.Visible = false
-        contentArea.Visible = false
-    elseif visible then
-        mainFrame.Size = CONFIG.UI.FrameSize
-        sidebar.Visible = true
-        contentArea.Visible = true
+    if visible then
+        mainFrame.Size = getMainPanelSize()
+        if _G.isMobile or _G.isDelta then
+            mainFrame.Position = UDim2.new(0.03, 0, 0.08, 0)
+        end
+        sidebar.Visible = not isMinimized
+        contentArea.Visible = not isMinimized
     end
 end
 
@@ -7136,10 +7070,45 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
+-- Delta / mobil: ekranda her zaman gorunen acma butonu (RightShift yok)
+if _G.isMobile or _G.isDelta then
+    local fabGui = createProtectedScreenGui("KenHub_MobileToggle")
+    fabGui.DisplayOrder = 1000000
+    fabGui.Enabled = true
+
+    local fabBtn = Instance.new("TextButton")
+    fabBtn.Name = "OpenPanel"
+    fabBtn.Size = UDim2.new(0, 54, 0, 54)
+    fabBtn.Position = UDim2.new(0, 14, 0.55, -27)
+    fabBtn.BackgroundColor3 = CONFIG.Colors.Accent
+    fabBtn.Text = "KH"
+    fabBtn.Font = Enum.Font.GothamBold
+    fabBtn.TextSize = 18
+    fabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fabBtn.AutoButtonColor = false
+    fabBtn.ZIndex = 10
+    fabBtn.Parent = fabGui
+    Instance.new("UICorner", fabBtn).CornerRadius = UDim.new(1, 0)
+    local fabStroke = Instance.new("UIStroke", fabBtn)
+    fabStroke.Color = Color3.fromRGB(255, 255, 255)
+    fabStroke.Thickness = 1.5
+
+    local function onFabPress()
+        setMainGuiVisible(isGuiHidden)
+    end
+    fabBtn.MouseButton1Click:Connect(onFabPress)
+    fabBtn.TouchTap:Connect(onFabPress)
+    fabBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            onFabPress()
+        end
+    end)
+end
+
 minimizeBtn.MouseButton1Click:Connect(function()
     local success, _ = pcall(function()
         isMinimized = not isMinimized
-        mainFrame.Size = isMinimized and CONFIG.UI.MinimizedSize or CONFIG.UI.FrameSize
+        mainFrame.Size = getMainPanelSize()
         sidebar.Visible = not isMinimized
         contentArea.Visible = not isMinimized
         minimizeBtn.Text = isMinimized and "+" or "−"
@@ -7206,7 +7175,9 @@ closeBtn.MouseButton1Click:Connect(function()
         pcall(function()
             game:GetService("StarterGui"):SetCore("SendNotification", {
                 Title = "Ken HUB",
-                Text = "Panel gizlendi. RightShift veya Insert ile ac.",
+                Text = (_G.isDelta or _G.isMobile)
+                    and "Panel gizlendi. KH butonuna dokun."
+                    or "Panel gizlendi. RightShift veya Insert ile ac.",
                 Duration = 4,
             })
         end)
@@ -7398,14 +7369,32 @@ end
 
 initialize()
 
+-- GUI gorunurluk garantisi (Delta gethui gecikmesi icin)
+task.defer(function()
+    task.wait(0.5)
+    pcall(function()
+        if screenGui then
+            screenGui.Enabled = true
+            if not screenGui.Parent then
+                parentScreenGui(screenGui)
+            end
+        end
+        if mainFrame then
+            mainFrame.Visible = true
+        end
+    end)
+end)
+
 pcall(function()
     game:GetService("StarterGui"):SetCore("SendNotification", {
         Title = "Ken HUB v1.67",
-        Text = "Yuklendi! RightShift veya Insert = panel ac/kapa",
-        Duration = 5,
+        Text = (_G.isDelta or _G.isMobile)
+            and "Yuklendi! Sol alttaki KH butonuna dokun"
+            or "Yuklendi! RightShift veya Insert = panel ac/kapa",
+        Duration = 6,
     })
 end)
-print("[Ken HUB] Panel yuklendi. RightShift veya Insert ile ac/kapa.")
+print("[Ken HUB] Panel yuklendi.", (_G.isDelta or _G.isMobile) and "KH butonuna dokun." or "RightShift ile ac/kapa.")
 
 --=========================================================
 -- Cleanup on Script End
