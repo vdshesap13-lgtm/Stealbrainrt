@@ -1,6 +1,6 @@
 -- Ken HUB Part 2/5 - UI Shell
 -- Ken HUB Part 2/5 - UI Shell
-local SCRIPT_VERSION = "1.81"
+local SCRIPT_VERSION = "1.82"
 local K = _G.KenHubState
 if not K or not K.CONFIG then
     error("[Ken HUB] Part 1 yuklenmedi - Loader.lua kullan")
