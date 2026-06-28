@@ -1,5 +1,5 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.78"
+local SCRIPT_VERSION = "1.79"
 
 -- [Ken HUB v1.76] Global pet tier tables (split-safe, never nil)
 if type(_G.KenHub) ~= "table" then _G.KenHub = {} end
@@ -430,7 +430,7 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 local jumpSwitch
 local speedSwitch
 
--- KenHub_P3_BRIDGE_v178
+-- KenHub_P3_BRIDGE_v179
 -- Part 1/2 API bridge
 
 local HttpService = K.HttpService or game:GetService("HttpService")
@@ -1423,6 +1423,172 @@ local helicopterSwitch = createSwitch(_G.movementSection, "Helicopter", CONFIG.M
     _G.saveSettings()
 end)
 
+-- Duvarlardan Gecme (Noclip + InvisibleWalls/LaserHitbox bypass)
+local NOCLIP_ENABLED = false
+local WALL_BYPASS_ENABLED = false
+local noclipConn = nil
+local wallBypassConns = {}
+
+local WALL_FOLDERS = {"InvisibleWalls", "LaserHitbox", "Barriers", "Walls", "Blockers"}
+
+local function setPlotWallCollision(plot, passThrough)
+    if not plot then return end
+    for _, folderName in ipairs(WALL_FOLDERS) do
+        local folder = plot:FindFirstChild(folderName)
+        if folder then
+            for _, obj in ipairs(folder:GetDescendants()) do
+                if obj:IsA("BasePart") then
+                    pcall(function() obj.CanCollide = not passThrough end)
+                end
+            end
+        end
+    end
+end
+
+local function applyWallBypassToAllPlots()
+    local plots = workspace:FindFirstChild("Plots")
+    if not plots then return end
+    for _, plot in ipairs(plots:GetChildren()) do
+        setPlotWallCollision(plot, WALL_BYPASS_ENABLED)
+    end
+end
+
+function _G.enableWallBypass()
+    WALL_BYPASS_ENABLED = true
+    if CONFIG.Movement.Noclip then
+        CONFIG.Movement.Noclip.WallBypass = true
+    end
+    applyWallBypassToAllPlots()
+end
+
+function _G.disableWallBypass()
+    WALL_BYPASS_ENABLED = false
+    applyWallBypassToAllPlots()
+end
+
+local function startWallBypassWatcher()
+    for _, conn in ipairs(wallBypassConns) do
+        pcall(function() conn:Disconnect() end)
+    end
+    wallBypassConns = {}
+
+    local plots = workspace:FindFirstChild("Plots")
+    if not plots then return end
+
+    table.insert(wallBypassConns, plots.ChildAdded:Connect(function(plot)
+        task.defer(function()
+            if WALL_BYPASS_ENABLED then
+                setPlotWallCollision(plot, true)
+            end
+        end)
+    end))
+
+    table.insert(wallBypassConns, plots.DescendantAdded:Connect(function(obj)
+        if not WALL_BYPASS_ENABLED then return end
+        if obj:IsA("BasePart") then
+            local parent = obj.Parent
+            while parent and parent ~= plots do
+                for _, name in ipairs(WALL_FOLDERS) do
+                    if parent.Name == name then
+                        pcall(function() obj.CanCollide = false end)
+                        return
+                    end
+                end
+                parent = parent.Parent
+            end
+        end
+    end))
+end
+
+local function enableNoclip()
+    if NOCLIP_ENABLED then return end
+    NOCLIP_ENABLED = true
+    CONFIG.Movement.Noclip = CONFIG.Movement.Noclip or {}
+    CONFIG.Movement.Noclip.Enabled = true
+
+    if noclipConn then
+        pcall(function() noclipConn:Disconnect() end)
+    end
+    noclipConn = RunService.Stepped:Connect(function()
+        if not NOCLIP_ENABLED then return end
+        local char = player.Character
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end)
+
+    if CONFIG.Movement.Noclip.WallBypass ~= false then
+        _G.enableWallBypass()
+    end
+    startWallBypassWatcher()
+end
+
+local function disableNoclip()
+    NOCLIP_ENABLED = false
+    if CONFIG.Movement.Noclip then
+        CONFIG.Movement.Noclip.Enabled = false
+    end
+    if noclipConn then
+        pcall(function() noclipConn:Disconnect() end)
+        noclipConn = nil
+    end
+
+    local char = player.Character
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                pcall(function() part.CanCollide = true end)
+            end
+        end
+    end
+
+    _G.disableWallBypass()
+end
+
+_G.enableNoclip = enableNoclip
+_G.disableNoclip = disableNoclip
+startWallBypassWatcher()
+
+createSectionHeader(_G.movementSection, "Duvar Bypass")
+local noclipSwitch = createSwitch(_G.movementSection, "Duvarlardan Gec", CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled or false, function(on)
+    CONFIG.Movement.Noclip = CONFIG.Movement.Noclip or { WallBypass = true }
+    CONFIG.Movement.Noclip.Enabled = on
+    _G.saveSettings()
+    if on then
+        enableNoclip()
+        _G.createCircularToggleUI("Duvarlardan Gec", function() return CONFIG.Movement.Noclip.Enabled end, function(state)
+            CONFIG.Movement.Noclip.Enabled = state
+            _G.saveSettings()
+            if state then enableNoclip() else disableNoclip() end
+        end)
+    else
+        disableNoclip()
+        local existingToggle = _G.circularToggleGui and _G.circularToggleGui:FindFirstChild("Duvarlardan GecToggleUI")
+        if existingToggle then
+            _G.OpenCircularToggles["Duvarlardan Gec"] = nil
+            existingToggle:Destroy()
+        end
+    end
+end)
+_G.noclipSwitch = noclipSwitch
+
+if CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then
+    task.defer(enableNoclip)
+end
+
+player.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then
+        enableNoclip()
+    end
+    if WALL_BYPASS_ENABLED then
+        applyWallBypassToAllPlots()
+    end
+end)
+
 
 --- Fling System
 createSectionHeader(_G.movementSection, "Fling System")
@@ -2056,8 +2222,18 @@ createSwitch(_G.automationSection, "Min M/s filtresi aktif", CONFIG.Automation.P
     CONFIG.Automation.PetSnipe.UseMinGeneration = on
     _G.saveSettings()
 end)
-createNumberInput(_G.automationSection, "Min M/s (ornek: 100 = 100M)", (CONFIG.Automation.PetSnipe.MinGeneration or 100e6) / 1e6, function(value)
+createNumberInput(_G.automationSection, "Min M/s (ornek: 100 = 100M)", (CONFIG.Automation.PetSnipe.MinGeneration or 10e6) / 1e6, function(value)
     CONFIG.Automation.PetSnipe.MinGeneration = math.clamp(value, 0, 99999) * 1e6
+    _G.saveSettings()
+end)
+
+createSwitch(_G.automationSection, "Snipe sirasinda duvar bypass", CONFIG.Automation.PetSnipe.AutoNoclip ~= false, function(on)
+    CONFIG.Automation.PetSnipe.AutoNoclip = on
+    _G.saveSettings()
+end)
+
+createSwitch(_G.automationSection, "Kilitli base atla", CONFIG.Automation.PetSnipe.SkipLockedPlots ~= false, function(on)
+    CONFIG.Automation.PetSnipe.SkipLockedPlots = on
     _G.saveSettings()
 end)
 
@@ -2675,6 +2851,9 @@ _G.KenHubMid = {
     disablePetSnipe = disablePetSnipe,
     enablePetSnipe = enablePetSnipe,
     petSnipeSwitch = petSnipeSwitch,
+    enableNoclip = enableNoclip,
+    disableNoclip = disableNoclip,
+    noclipSwitch = noclipSwitch,
     setInvisibility = setInvisibility,
     findPlayerPlot = findPlayerPlot,
     getPlayerPlot = function() return playerPlot end,
