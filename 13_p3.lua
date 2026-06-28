@@ -1,18 +1,18 @@
--- Ken HUB Part 3/5 - Sections + Automation
--- Ken HUB Part 3/5 - Sections + Automation
-local SCRIPT_VERSION = "1.73"
+-- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
+local SCRIPT_VERSION = "1.74"
 local K = _G.KenHubState
-if not K or not K.createSwitch or not K.createSection or not K.setupUnhittableControl then
-    error("[Ken HUB] Part 2 yuklenmedi - Loader.lua kullan")
+if not K or not K.CONFIG or not K.createSwitch or not K.createSection then
+    error("[Ken HUB] Part 1-2 yuklenmedi - Loader.lua kullan")
 end
 local CONFIG = K.CONFIG
 local player = K.player
 local username = K.username
-local RunService = K.RunService
-local TweenService = K.TweenService
-local ReplicatedStorage = K.ReplicatedStorage
-local ProximityPromptService = K.ProximityPromptService
+local RunService = K.RunService or game:GetService("RunService")
+local TweenService = K.TweenService or game:GetService("TweenService")
+local ReplicatedStorage = K.ReplicatedStorage or game:GetService("ReplicatedStorage")
+local ProximityPromptService = K.ProximityPromptService or game:GetService("ProximityPromptService")
 local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
 local createSection = K.createSection
 local createTabButton = K.createTabButton
 local createSwitch = K.createSwitch
@@ -35,20 +35,381 @@ local setInvisibility = K.setInvisibility
 local enablePetSnipe = K.enablePetSnipe
 local disablePetSnipe = K.disablePetSnipe
 local playerPlot = K.playerPlot
-local character = K.character
+local character = K.character or player.Character
 local humanoid = K.humanoid
 local humanoidRootPart = K.humanoidRootPart
-local setupJumpPowerControl = K.setupJumpPowerControl
-local setupSpeedControl = K.setupSpeedControl
-local setupUnhittableControl = K.setupUnhittableControl
-local setupResizeControl = K.setupResizeControl
-local setupFlingControl = K.setupFlingControl
-local enableESP = K.enableESP
-local disableESP = K.disableESP
-local enablePlotESP = K.enablePlotESP
-local disablePlotESP = K.disablePlotESP
+
+-- Part 2 export yoksa bile calissin: setup fonksiyonlari burada tanimli
+-- Jump Power Control
+--=========================================================
+local function setupJumpPowerControl(parent)
+    local jumpData = {
+        defaultJumpPower = 50,
+        isActive = false
+    }
+
+    local jumpSwitch = createSwitch(parent, "Jump Bypass", _G.SavedToggleStates and _G.SavedToggleStates.Jump or false, function(on)
+        local success, _ = pcall(function()
+            jumpData.isActive = on
+            if humanoid then
+                humanoid.UseJumpPower = true
+                humanoid.JumpPower = on and CONFIG.Movement.JumpPower or jumpData.defaultJumpPower
+            end
+            if on then
+                -- Auto-create side toggle when enabled
+                _G.createCircularToggleUI("Jump", function() return jumpSwitch.get() end, function(state) jumpSwitch.set(state) end)
+            else
+                -- Remove side toggle when disabled
+                local existingToggle = _G.circularToggleGui:FindFirstChild("JumpToggleUI")
+                if existingToggle then
+                    _G.OpenCircularToggles["Jump"] = nil
+                    existingToggle:Destroy()
+                    _G.saveSettings()
+                end
+            end
+        end)
+        if not success then
+            warn("Failed to toggle jump power")
+        end
+    end)
+
+    return jumpData.isActive, jumpSwitch
+end
+
+--=========================================================
+-- Speed Boost Control
+--=========================================================
+local function setupSpeedControl(parent)
+    local speedData = {
+        enabled = false,
+        connections = {},
+        joystickDelta = Vector2.new(0, 0),
+        touchId = nil
+    }
+
+    local function enableSpeed()
+        local success, _ = pcall(function()
+            if speedData.enabled then return end
+            humanoid, humanoidRootPart = character and character:FindFirstChildOfClass("Humanoid"), character and character:FindFirstChild("HumanoidRootPart")
+            if not humanoid or not humanoidRootPart then return end
+            speedData.enabled = true
+
+            if UserInputService.TouchEnabled then
+                speedData.connections.touchBegan = UserInputService.TouchStarted:Connect(function(input, gameProcessed)
+                    if gameProcessed or speedData.touchId then return end
+                    if input.UserInputType == Enum.UserInputType.Touch then
+                        speedData.touchId = input.UserInputId
+                        speedData.joystickDelta = Vector2.new(0, 0)
+                    end
+                end)
+
+                speedData.connections.touchMoved = UserInputService.TouchMoved:Connect(function(input, gameProcessed)
+                    if gameProcessed or input.UserInputId ~= speedData.touchId then return end
+                    local touchPos = input.Position
+                    local screenSize = workspace.CurrentCamera.ViewportSize
+                    local normalizedPos = Vector2.new(
+                        (touchPos.X / screenSize.X - 0.25) * 4,
+                        (touchPos.Y / screenSize.Y - 0.5) * 2
+                    )
+                    speedData.joystickDelta = Vector2.new(
+                        math.clamp(normalizedPos.X, -1, 1),
+                        math.clamp(normalizedPos.Y, -1, 1)
+                    )
+                end)
+
+                speedData.connections.touchEnded = UserInputService.TouchEnded:Connect(function(input, gameProcessed)
+                    if gameProcessed or input.UserInputId ~= speedData.touchId then return end
+                    speedData.touchId = nil
+                    speedData.joystickDelta = Vector2.new(0, 0)
+                end)
+            end
+
+            speedData.connections.move = RunService.Heartbeat:Connect(function()
+                if not speedData.enabled or not humanoid or not humanoidRootPart or humanoidRootPart.Parent ~= character then return end
+
+                local moveVector = Vector3.new(0, 0, 0)
+                local camCF = workspace.CurrentCamera.CFrame
+
+                if UserInputService.TouchEnabled and speedData.joystickDelta.Magnitude > 0.15 then
+                    moveVector = camCF:VectorToWorldSpace(Vector3.new(speedData.joystickDelta.X, 0, -speedData.joystickDelta.Y))
+                    moveVector = moveVector.Unit * CONFIG.Movement.Speed
+                else
+                    local moveX = (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
+                    local moveZ = (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
+                    if moveX ~= 0 or moveZ ~= 0 then
+                        moveVector = (camCF.RightVector * moveX + camCF.LookVector * moveZ).Unit * CONFIG.Movement.Speed
+                    end
+                end
+
+                local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
+                local newVelocity = Vector3.new(
+                    moveVector.X ~= 0 and moveVector.X or currentVelocity.X,
+                    currentVelocity.Y,
+                    moveVector.Z ~= 0 and moveVector.Z or currentVelocity.Z
+                )
+
+                local flatMag = Vector3.new(newVelocity.X, 0, newVelocity.Z).Magnitude
+                if flatMag > CONFIG.Movement.MaxSpeed then
+                    local ratio = CONFIG.Movement.MaxSpeed / flatMag
+                    newVelocity = Vector3.new(newVelocity.X * ratio, newVelocity.Y, newVelocity.Z * ratio)
+                end
+
+                humanoidRootPart.AssemblyLinearVelocity = newVelocity
+            end)
+        end)
+        if not success then
+            warn("Failed to enable speed boost")
+            speedData.enabled = false
+        end
+    end
+
+    local function disableSpeed()
+        local success, _ = pcall(function()
+            if not speedData.enabled then return end
+            speedData.enabled = false
+            for _, conn in pairs(speedData.connections) do
+                pcall(function() conn:Disconnect() end)
+            end
+            speedData.connections = {}
+            speedData.touchId = nil
+            speedData.joystickDelta = Vector2.new(0, 0)
+            if humanoidRootPart then
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, humanoidRootPart.AssemblyLinearVelocity.Y, 0)
+            end
+        end)
+        if not success then
+            warn("Failed to disable speed boost")
+        end
+    end
+
+    local speedSwitch = createSwitch(parent, "Speed Boost", _G.SavedToggleStates and _G.SavedToggleStates.Speed or false, function(on)
+        if on then
+            enableSpeed()
+            -- Auto-create side toggle when enabled
+            _G.createCircularToggleUI("Speed", function() return speedSwitch.get() end, function(state) speedSwitch.set(state) end)
+        else
+            disableSpeed()
+            -- Remove side toggle when disabled
+            local existingToggle = _G.circularToggleGui:FindFirstChild("SpeedToggleUI")
+            if existingToggle then
+                _G.OpenCircularToggles["Speed"] = nil
+                existingToggle:Destroy()
+                _G.saveSettings()
+            end
+        end
+    end)
+
+    return speedData.enabled, speedSwitch
+end
+
+
+--=========================================================
+-- Unhittable Control
+--=========================================================
+local unhittableSwitch -- Global to access in CharacterAdded
+
+local function setupUnhittableControl(parent)
+    local defaultSize = Vector3.new(2, 2, 1)
+    local isUnhittableActive = false
+    local unhittableThread = nil
+
+    unhittableSwitch = createSwitch(parent, "Height Bypass", false, function(on)
+        local success, _ = pcall(function()
+            isUnhittableActive = on
+            if not humanoidRootPart then return end
+            if on then
+                if not unhittableThread then
+                    unhittableThread = task.spawn(function()
+                        while isUnhittableActive do
+                            if humanoidRootPart then
+                                humanoidRootPart.Size = Vector3.new(
+                                    CONFIG.Movement.Unhittable.IntermediateSize.X,
+                                    CONFIG.Movement.Unhittable.IntermediateSize.Y,
+                                    CONFIG.Movement.Unhittable.IntermediateSize.Z
+                                )
+                                task.wait(0.2)
+                                if not isUnhittableActive then break end
+                                humanoidRootPart.Size = Vector3.new(
+                                    CONFIG.Movement.Unhittable.TallSize.X,
+                                    CONFIG.Movement.Unhittable.TallSize.Y,
+                                    CONFIG.Movement.Unhittable.TallSize.Z
+                                )
+                                task.wait(2.1)
+                                if not isUnhittableActive then break end
+                                humanoidRootPart.Size = defaultSize
+                                task.wait(1.5)
+                            else
+                                task.wait(0.1)
+                            end
+                        end
+                        if humanoidRootPart then
+                            humanoidRootPart.Size = defaultSize
+                        end
+                        unhittableThread = nil
+                    end)
+                end
+            else
+                if humanoidRootPart then
+                    humanoidRootPart.Size = defaultSize
+                end
+                if unhittableThread then
+                    task.cancel(unhittableThread)
+                    unhittableThread = nil
+                end
+            end
+        end)
+        if not success then
+            warn("Failed to toggle height bypass")
+        end
+    end)
+
+    return isUnhittableActive, unhittableSwitch
+end
+
+--=========================================================
+-- Resize Control
+--=========================================================
+local resizeSwitch -- Global to access in CharacterAdded
+
+local function setupResizeControl(parent)
+    local defaultSize = Vector3.new(2, 2, 1)
+    local isResizeActive = false
+
+    resizeSwitch = createSwitch(parent, "Tall like Ken", false, function(on)
+        local success, _ = pcall(function()
+            isResizeActive = on
+            if humanoidRootPart then
+                humanoidRootPart.Size = on and Vector3.new(
+                    CONFIG.Movement.Resize.TargetSize.X,
+                    CONFIG.Movement.Resize.TargetSize.Y,
+                    CONFIG.Movement.Resize.TargetSize.Z
+                ) or defaultSize
+            end
+        end)
+        if not success then
+            warn("Failed to toggle tall mode")
+        end
+    end)
+
+    return isResizeActive, resizeSwitch
+end
+
+--=========================================================
+-- Fling Control (Fixed Desync Logic)
+--=========================================================
+local flingSwitch -- Global to access in CharacterAdded
+
+local function setupFlingControl(parent)
+    local isFlingActive = false
+    local desyncState = {}
+    local flingConnection = nil
+    local oldIndex = nil
+
+    local function RandomNumberRange(a)
+        return math.random(-a * 100, a * 100) / 100
+    end
+
+    local function enableFling()
+        local success, err = pcall(function()
+            if isFlingActive then return end
+            -- Ensure character and components exist
+            if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or not player.Character:FindFirstChild("Humanoid") or player.Character.Humanoid.Health <= 0 then
+                warn("Cannot enable fling: Character not ready")
+                return
+            end
+            isFlingActive = true
+
+            -- Hook __index to spoof CFrame
+            oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+                if isFlingActive and not checkcaller() and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+                    if key == "CFrame" then
+                        if self == player.Character.HumanoidRootPart then
+                            return desyncState[1] or CFrame.new()
+                        elseif self == player.Character.Head then
+                            return desyncState[1] and (desyncState[1] + Vector3.new(0, player.Character.HumanoidRootPart.Size.Y / 2 + 0.5, 0)) or CFrame.new()
+                        end
+                    end
+                end
+                return oldIndex(self, key)
+            end))
+
+            flingConnection = RunService.Heartbeat:Connect(function()
+                if isFlingActive and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+                    local hrp = player.Character.HumanoidRootPart
+                    -- Store original state
+                    desyncState[1] = hrp.CFrame
+                    desyncState[2] = hrp.AssemblyLinearVelocity
+
+                    -- Spoof CFrame and velocity
+                    local spoofCFrame = desyncState[1] * CFrame.new(Vector3.new(0, 0, 0))
+                    spoofCFrame = spoofCFrame * CFrame.Angles(math.rad(RandomNumberRange(180)), math.rad(RandomNumberRange(180)), math.rad(RandomNumberRange(180)))
+                    hrp.CFrame = spoofCFrame
+                    hrp.AssemblyLinearVelocity = Vector3.new(1, 0, 0) * 5000 -- Reduced velocity to prevent physics crashes
+
+                    -- Wait for next frame
+                    RunService.RenderStepped:Wait()
+
+                    -- Restore original state only if character is still valid
+                    if player.Character and hrp.Parent == player.Character then
+                        hrp.CFrame = desyncState[1]
+                        hrp.AssemblyLinearVelocity = desyncState[2]
+                    end
+                end
+            end)
+        end)
+        if not success then
+            warn("Failed to enable fling: " .. tostring(err))
+            isFlingActive = false
+            flingSwitch.set(false) -- Reset UI switch if enabling fails
+        end
+    end
+
+    local function disableFling()
+        local success, err = pcall(function()
+            if not isFlingActive then return end
+            isFlingActive = false
+            if flingConnection then
+                flingConnection:Disconnect()
+                flingConnection = nil
+            end
+            if oldIndex then
+                -- Restore original __index
+                hookmetamethod(game, "__index", function(self, key)
+                    return oldIndex(self, key)
+                end)
+                oldIndex = nil
+            end
+            desyncState = {}
+            -- Ensure character state is reset
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                player.Character.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, player.Character.HumanoidRootPart.AssemblyLinearVelocity.Y, 0)
+            end
+        end)
+        if not success then
+            warn("Failed to disable fling: " .. tostring(err))
+        end
+    end
+
+    flingSwitch = createSwitch(parent, "Fling (patched)", false, function(on)
+        if on then
+            enableFling()
+        else
+            disableFling()
+        end
+    end)
+
+    return isFlingActive, flingSwitch
+end
+
+-- ESP: Part 2'den gelirse kullan, yoksa bos fonksiyon (toggle aninda patlamasin)
+local enableESP = (K and K.enableESP) or function() warn("[Ken HUB] enableESP yuklenmedi") end
+local disableESP = (K and K.disableESP) or function() end
+local enablePlotESP = (K and K.enablePlotESP) or function() warn("[Ken HUB] enablePlotESP yuklenmedi") end
+local disablePlotESP = (K and K.disablePlotESP) or function() end
+
 local jumpSwitch
 local speedSwitch
+
 -- UI Sections Setup
 --=========================================================
 _G.homeSection = createSection("Home")
@@ -59,13 +420,16 @@ _G.serverSection = createSection("Server")
 _G.patchedSection = createSection("Patched")
 _G.desyncSection = createSection("Desync")
 
--- Jump/Speed switchleri section olustuktan sonra bagla
 do
-    local _, js = setupJumpPowerControl(_G.movementSection)
-    jumpSwitch = js
-    local _, ss = setupSpeedControl(_G.movementSection)
-    speedSwitch = ss
+    local ok, err = pcall(function()
+        local _, js = setupJumpPowerControl(_G.movementSection)
+        jumpSwitch = js
+        local _, ss = setupSpeedControl(_G.movementSection)
+        speedSwitch = ss
+    end)
+    if not ok then warn("[Ken HUB] Jump/Speed setup: " .. tostring(err)) end
 end
+
 
 createTabButton("Home", "Home", "rbxassetid://6031265976")
 createTabButton("Movement", "Movement", "rbxassetid://6035047409")
@@ -278,8 +642,13 @@ local floatSwitch = createSwitch(_G.movementSection, "Float", CONFIG.Movement.Fl
 end)
 
 
-local _, unhittableSwitchInstance = setupUnhittableControl(_G.movementSection)
-local _, resizeSwitchInstance = setupResizeControl(_G.movementSection)
+local unhittableSwitchInstance, resizeSwitchInstance
+pcall(function()
+    local _, u = setupUnhittableControl(_G.movementSection)
+    unhittableSwitchInstance = u
+    local _, r = setupResizeControl(_G.movementSection)
+    resizeSwitchInstance = r
+end)
 
 --=========================================================
 -- Helicopter System
@@ -1421,7 +1790,11 @@ local invisibilitySwitch = createSwitch(_G.patchedSection, "Invisibility (patche
     -- ActiveFeatures removed
     _G.saveSettings()
 end)
-local _, flingSwitchInstance = setupFlingControl(_G.patchedSection)
+local flingSwitchInstance
+pcall(function()
+    local _, f = setupFlingControl(_G.patchedSection)
+    flingSwitchInstance = f
+end)
 
 
 -- Server Section (Global Variables to Save Local Registers)
