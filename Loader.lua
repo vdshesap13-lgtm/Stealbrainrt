@@ -5,7 +5,7 @@
 
 local PART1_URL = "https://raw.githubusercontent.com/vdshesap13-lgtm/Stealbrainrt/main/13.lua"
 local PART2_URL = "https://raw.githubusercontent.com/vdshesap13-lgtm/Stealbrainrt/main/13_part2.lua"
-local MIN_VERSION = "1.68"
+local MIN_VERSION = "1.69"
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
