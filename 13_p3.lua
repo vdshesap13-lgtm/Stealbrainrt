@@ -1,5 +1,5 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.81"
+local SCRIPT_VERSION = "1.82"
 
 -- [Ken HUB v1.76] Global pet tier tables (split-safe, never nil)
 if type(_G.KenHub) ~= "table" then _G.KenHub = {} end
@@ -430,7 +430,7 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 local jumpSwitch
 local speedSwitch
 
--- KenHub_P3_BRIDGE_v181
+-- KenHub_P3_BRIDGE_v182
 -- Part 1/2 API bridge
 
 local HttpService = K.HttpService or game:GetService("HttpService")
@@ -1423,229 +1423,17 @@ local helicopterSwitch = createSwitch(_G.movementSection, "Helicopter", CONFIG.M
     _G.saveSettings()
 end)
 
--- Duvarlardan Gecme (Noclip + InvisibleWalls/LaserHitbox bypass)
-local NOCLIP_ENABLED = false
-local WALL_BYPASS_ENABLED = false
-local noclipConn = nil
-local noclipHeartbeat = nil
-local wallBypassConns = {}
-
-local WALL_FOLDERS = {"InvisibleWalls", "LaserHitbox", "Barriers", "Walls", "Blockers"}
-
-local function setPlotWallCollision(plot, passThrough)
-    if not plot then return end
-    for _, folderName in ipairs(WALL_FOLDERS) do
-        local folder = plot:FindFirstChild(folderName)
-        if folder then
-            for _, obj in ipairs(folder:GetDescendants()) do
-                if obj:IsA("BasePart") then
-                    pcall(function()
-                        if passThrough then
-                            obj.CanCollide = false
-                            obj.CanTouch = false
-                            local mesh = obj:FindFirstChildOfClass("SpecialMesh") or obj:FindFirstChild("Mesh")
-                            if mesh then mesh:Destroy() end
-                        else
-                            obj.CanCollide = true
-                            obj.CanTouch = true
-                        end
-                    end)
-                end
-            end
-        end
-    end
-    local purchases = plot:FindFirstChild("Purchases")
-    local plotBlock = purchases and purchases:FindFirstChild("PlotBlock")
-    if plotBlock then
-        for _, obj in ipairs(plotBlock:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                pcall(function()
-                    if passThrough then
-                        obj.CanCollide = false
-                        obj.CanTouch = false
-                    else
-                        obj.CanCollide = true
-                        obj.CanTouch = true
-                    end
-                end)
-            end
-        end
-    end
-end
-
-local function applyWallBypassToAllPlots()
-    local plots = workspace:FindFirstChild("Plots")
-    if not plots then return end
-    for _, plot in ipairs(plots:GetChildren()) do
-        setPlotWallCollision(plot, WALL_BYPASS_ENABLED)
-    end
-end
-
-function _G.enableWallBypass()
-    WALL_BYPASS_ENABLED = true
-    if CONFIG.Movement.Noclip then
-        CONFIG.Movement.Noclip.WallBypass = true
-    end
-    applyWallBypassToAllPlots()
-end
-
-function _G.disableWallBypass()
-    WALL_BYPASS_ENABLED = false
-    applyWallBypassToAllPlots()
-end
-
-function _G.bypassPlotWalls(plot)
-    if not plot then return end
-    local folders = {"InvisibleWalls", "LaserHitbox", "Barriers", "Walls", "Blockers", "ForceField", "Colliders"}
-    for _, folderName in ipairs(folders) do
-        local folder = plot:FindFirstChild(folderName)
-        if folder then
-            for _, obj in ipairs(folder:GetDescendants()) do
-                if obj:IsA("BasePart") then
-                    pcall(function()
-                        obj.CanCollide = false
-                        obj.CanTouch = false
-                        local mesh = obj:FindFirstChildOfClass("SpecialMesh") or obj:FindFirstChild("Mesh")
-                        if mesh then mesh:Destroy() end
-                    end)
-                end
-            end
-        end
-    end
-    local purchases = plot:FindFirstChild("Purchases")
-    local plotBlock = purchases and purchases:FindFirstChild("PlotBlock")
-    if plotBlock then
-        for _, obj in ipairs(plotBlock:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                pcall(function()
-                    obj.CanCollide = false
-                    obj.CanTouch = false
-                end)
-            end
-        end
-    end
-end
-
-local function startWallBypassWatcher()
-    for _, conn in ipairs(wallBypassConns) do
-        pcall(function() conn:Disconnect() end)
-    end
-    wallBypassConns = {}
-
-    local plots = workspace:FindFirstChild("Plots")
-    if not plots then return end
-
-    table.insert(wallBypassConns, plots.ChildAdded:Connect(function(plot)
-        task.defer(function()
-            if WALL_BYPASS_ENABLED then
-                setPlotWallCollision(plot, true)
-            end
-        end)
-    end))
-
-    table.insert(wallBypassConns, plots.DescendantAdded:Connect(function(obj)
-        if not WALL_BYPASS_ENABLED then return end
-        if obj:IsA("BasePart") then
-            local parent = obj.Parent
-            while parent and parent ~= plots do
-                for _, name in ipairs(WALL_FOLDERS) do
-                    if parent.Name == name then
-                        pcall(function()
-                            obj.CanCollide = false
-                            obj.CanTouch = false
-                        end)
-                        return
-                    end
-                end
-                parent = parent.Parent
-            end
-        end
-    end))
-end
-
-local function applyCharacterNoclip(char)
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-            part.CanTouch = false
-        end
-    end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end
-end
-
+-- Duvarlardan Gecme -> KenHubSAB (Part 1, ScriptRot uyumlu)
 local function enableNoclip()
-    if NOCLIP_ENABLED then return end
-    NOCLIP_ENABLED = true
-    CONFIG.Movement.Noclip = CONFIG.Movement.Noclip or {}
+    CONFIG.Movement.Noclip = CONFIG.Movement.Noclip or { WallBypass = true }
     CONFIG.Movement.Noclip.Enabled = true
-
-    if noclipConn then pcall(function() noclipConn:Disconnect() end) end
-    if noclipHeartbeat then pcall(function() noclipHeartbeat:Disconnect() end) end
-
-    noclipConn = RunService.PreSimulation:Connect(function()
-        if not NOCLIP_ENABLED then return end
-        applyCharacterNoclip(player.Character)
-    end)
-
-    noclipHeartbeat = RunService.Heartbeat:Connect(function()
-        if not NOCLIP_ENABLED then return end
-        local char = player.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.AssemblyAngularVelocity = Vector3.zero
-        end
-    end)
-
-    applyCharacterNoclip(player.Character)
-
-    if CONFIG.Movement.Noclip.WallBypass ~= false then
-        _G.enableWallBypass()
-    end
-    startWallBypassWatcher()
+    if _G.KenHubSAB then _G.KenHubSAB.enableBypass() end
 end
 
 local function disableNoclip()
-    NOCLIP_ENABLED = false
-    if CONFIG.Movement.Noclip then
-        CONFIG.Movement.Noclip.Enabled = false
-    end
-    if noclipConn then
-        pcall(function() noclipConn:Disconnect() end)
-        noclipConn = nil
-    end
-    if noclipHeartbeat then
-        pcall(function() noclipHeartbeat:Disconnect() end)
-        noclipHeartbeat = nil
-    end
-
-    local char = player.Character
-    if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                pcall(function()
-                    part.CanCollide = true
-                    part.CanTouch = true
-                end)
-            end
-        end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            pcall(function() hrp.CanCollide = false end)
-        end
-    end
-
-    _G.disableWallBypass()
+    if CONFIG.Movement.Noclip then CONFIG.Movement.Noclip.Enabled = false end
+    if _G.KenHubSAB then _G.KenHubSAB.disableBypass() end
 end
-
-_G.enableNoclip = enableNoclip
-_G.disableNoclip = disableNoclip
-startWallBypassWatcher()
 
 createSectionHeader(_G.movementSection, "Duvar Bypass")
 local noclipSwitch = createSwitch(_G.movementSection, "Duvarlardan Gec", CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled or false, function(on)
@@ -1674,13 +1462,10 @@ if CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then
     task.defer(enableNoclip)
 end
 
-player.CharacterAdded:Connect(function(char)
+player.CharacterAdded:Connect(function()
     task.wait(0.5)
     if CONFIG.Movement.Noclip and CONFIG.Movement.Noclip.Enabled then
         enableNoclip()
-    end
-    if WALL_BYPASS_ENABLED then
-        applyWallBypassToAllPlots()
     end
 end)
 
@@ -2267,7 +2052,7 @@ createSectionHeader(_G.automationSection, "Pet Snipe")
 local petSnipeInfo = Instance.new("TextLabel")
 petSnipeInfo.Size = UDim2.new(1, -20, 0, 44)
 petSnipeInfo.BackgroundTransparency = 1
-petSnipeInfo.Text = "Hedef pet -> dusman base TP (kilitli dahil) -> cal -> kendi base TP -> teslim."
+petSnipeInfo.Text = "ScriptRot akisi: dusman base TP -> pet cal -> DeliveryHitbox TP -> teslim. Kilitli base dahil."
 petSnipeInfo.TextColor3 = CONFIG.Colors.SubText
 petSnipeInfo.TextSize = 13
 petSnipeInfo.Font = Enum.Font.Gotham
