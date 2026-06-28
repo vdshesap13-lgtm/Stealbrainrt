@@ -1,6 +1,6 @@
 -- Ken HUB Part 2/5 - UI Shell
 -- Ken HUB Part 2/5 - UI Shell
-local SCRIPT_VERSION = "1.72"
+local SCRIPT_VERSION = "1.73"
 local K = _G.KenHubState
 if not K or not K.CONFIG then
     error("[Ken HUB] Part 1 yuklenmedi - Loader.lua kullan")
@@ -1453,9 +1453,6 @@ local function setupSpeedControl(parent)
     return speedData.enabled, speedSwitch
 end
 
--- Setup Movement Controls (moved here after function definitions)
-local _, jumpSwitch = setupJumpPowerControl(_G.movementSection)
-local _, speedSwitch = setupSpeedControl(_G.movementSection)
 
 --=========================================================
 -- Unhittable Control
@@ -1674,5 +1671,14 @@ K.sidebar = sidebar
 K.contentArea = contentArea
 K.sections = sections
 K.activeSection = activeSection
+K.setupJumpPowerControl = setupJumpPowerControl
+K.setupSpeedControl = setupSpeedControl
+K.setupUnhittableControl = setupUnhittableControl
+K.setupResizeControl = setupResizeControl
+K.setupFlingControl = setupFlingControl
+K.enableESP = enableESP
+K.disableESP = disableESP
+K.enablePlotESP = enablePlotESP
+K.disablePlotESP = disablePlotESP
 _G.KenHub_createSwitch = createSwitch
 pcall(function() _G.KenHubStatus("Part 2/5 OK") end)
