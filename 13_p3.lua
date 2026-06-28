@@ -1,5 +1,5 @@
 -- Ken HUB Part 3/5 - Sections + Automation (standalone setup)
-local SCRIPT_VERSION = "1.74"
+local SCRIPT_VERSION = "1.75"
 local K = _G.KenHubState
 if not K or not K.CONFIG or not K.createSwitch or not K.createSection then
     error("[Ken HUB] Part 1-2 yuklenmedi - Loader.lua kullan")
@@ -409,6 +409,75 @@ local disablePlotESP = (K and K.disablePlotESP) or function() end
 
 local jumpSwitch
 local speedSwitch
+
+-- Part 1/2 API bridge
+
+local HttpService = K.HttpService or game:GetService("HttpService")
+local TeleportService = K.TeleportService or game:GetService("TeleportService")
+
+local PET_TIER_ORDER = _G.PET_TIER_ORDER or {
+    "common", "uncommon", "rare", "epic", "legendary", "mythic",
+    "secret", "celestial", "divine", "og", "god", "limited", "exclusive",
+}
+local PET_TIER_LABELS = _G.PET_TIER_LABELS or {
+    common = "Common", uncommon = "Uncommon", rare = "Rare", epic = "Epic",
+    legendary = "Legendary", mythic = "Mythic", secret = "Secret",
+    celestial = "Celestial", divine = "Divine", og = "OG", god = "God",
+    limited = "Limited", exclusive = "Exclusive",
+}
+local PET_TIER_RANK = _G.PET_TIER_RANK or {}
+if not next(PET_TIER_RANK) then
+    for i, tier in ipairs(PET_TIER_ORDER) do
+        PET_TIER_RANK[tier] = i
+    end
+end
+
+local function ensurePetSnipeRarities()
+    if type(_G.ensurePetSnipeRarities) == "function" then
+        return _G.ensurePetSnipeRarities()
+    end
+    CONFIG.Automation = CONFIG.Automation or {}
+    CONFIG.Automation.PetSnipe = CONFIG.Automation.PetSnipe or {}
+    CONFIG.Automation.PetSnipe.Rarities = CONFIG.Automation.PetSnipe.Rarities or {}
+    for _, tier in ipairs(PET_TIER_ORDER or _G.PET_TIER_ORDER or {}) do
+        if CONFIG.Automation.PetSnipe.Rarities[tier] == nil then
+            CONFIG.Automation.PetSnipe.Rarities[tier] = PET_TIER_RANK[tier] >= (PET_TIER_RANK.rare or 3)
+        end
+    end
+end
+
+local getPlotOwner = _G.getPlotOwner or function(plot)
+    if not plot then return nil end
+    local ok, owner = pcall(function()
+        local plotSign = plot:FindFirstChild("PlotSign")
+        if not plotSign then return nil end
+        local sg = plotSign:FindFirstChild("SurfaceGui")
+        local fr = sg and sg:FindFirstChild("Frame")
+        local tl = fr and fr:FindFirstChild("TextLabel")
+        return tl and tl:IsA("TextLabel") and tl.Text or nil
+    end)
+    return ok and owner or nil
+end
+
+local getRemainingTime = _G.getRemainingTime or function(plot)
+    if not plot then return nil end
+    local ok, t = pcall(function()
+        local purchases = plot:FindFirstChild("Purchases")
+        local plotBlock = purchases and purchases:FindFirstChild("PlotBlock")
+        local main = plotBlock and plotBlock:FindFirstChild("Main")
+        local bb = main and main:FindFirstChild("BillboardGui")
+        local rt = bb and bb:FindFirstChild("RemainingTime")
+        if rt and rt:IsA("TextLabel") then return rt.Text end
+        bb = plot:FindFirstChild("BillboardGui", true)
+        rt = bb and bb:FindFirstChild("RemainingTime")
+        return rt and rt:IsA("TextLabel") and rt.Text or nil
+    end)
+    return ok and t or nil
+end
+
+local createBillboardGui = _G.KenHub_createBillboardGui or function() return nil end
+
+ensurePetSnipeRarities()
 
 -- UI Sections Setup
 --=========================================================
@@ -1940,7 +2009,7 @@ createButton(_G.automationSection, "Sadece Mythic+", function() _G.applyPetSnipe
 
 createSectionHeader(_G.automationSection, "Ozel Rarity Secimi")
 _G.petSnipeRaritySwitches = {}
-for _, tier in ipairs(PET_TIER_ORDER) do
+for _, tier in ipairs(PET_TIER_ORDER or _G.PET_TIER_ORDER or {}) do
     local label = PET_TIER_LABELS[tier] or tier
     local sw = createSwitch(_G.automationSection, label, CONFIG.Automation.PetSnipe.Rarities[tier] == true, function(on)
         ensurePetSnipeRarities()
@@ -1979,8 +2048,8 @@ createSwitch(settingsContent, "Show Player Distance", CONFIG.ESP.PlayerESP.ShowD
         CONFIG.ESP.PlayerESP.ShowDistance = on
         _G.saveSettings()
         -- Recreate all player ESP billboards
-        if ESP_Enabled then
-            for plr, data in pairs(ESP_Data) do
+        if _G.ESP_Enabled then
+            for plr, data in pairs(_G.ESP_Data or {}) do
                 if typeof(plr) == "Instance" and data.billboard then
                     data.billboard:Destroy()
                     local newBillboard, newDistanceLabel, newIconFrame = createBillboardGui(plr, plr.Character)
@@ -2003,8 +2072,8 @@ createSwitch(settingsContent, "Show Player Items", CONFIG.ESP.PlayerESP.ShowItem
         CONFIG.ESP.PlayerESP.ShowItems = on
         _G.saveSettings()
         -- Recreate all player ESP billboards
-        if ESP_Enabled then
-            for plr, data in pairs(ESP_Data) do
+        if _G.ESP_Enabled then
+            for plr, data in pairs(_G.ESP_Data or {}) do
                 if typeof(plr) == "Instance" and data.billboard then
                     data.billboard:Destroy()
                     local newBillboard, newDistanceLabel, newIconFrame = createBillboardGui(plr, plr.Character)
@@ -2420,7 +2489,7 @@ local function enablePlotTimeESP()
     end)
     if not success then
         warn("Failed to enable Plot Time ESP")
-        PlotTime_G.ESP_Enabled = false
+        _G.PlotTimeESP_Enabled = false
     end
 end
 
