@@ -1,6 +1,6 @@
 -- Ken HUB Part 5/5 - Init + Cleanup
 -- Ken HUB Part 5/5 - Init + Cleanup
-local SCRIPT_VERSION = "1.80"
+local SCRIPT_VERSION = "1.81"
 local B = _G.KenHubBundle
 if not B or not B.mainFrame or not B.createSwitch then
     _G.KenHubError("Part 4 export eksik - Loader ile 5 parcayi sirayla yukle")
