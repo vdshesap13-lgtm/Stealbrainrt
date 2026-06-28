@@ -1,7 +1,7 @@
 --=========================================================
 -- Ken HUB v1.68 - Delta Executor optimized bootstrap
 --=========================================================
-local SCRIPT_VERSION = "1.69"
+local SCRIPT_VERSION = "1.70"
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -5838,6 +5838,120 @@ local function disablePlotTimeESP()
     end
 end
 
+-- [KenHUB register split - block 1a -> 1b]
+_G.KenHubMid = {
+    CONFIG = CONFIG,
+    player = player,
+    username = username,
+    createSwitch = createSwitch,
+    createSectionHeader = createSectionHeader,
+    createNumberInput = createNumberInput,
+    mainFrame = mainFrame,
+    screenGui = screenGui,
+    settingsContent = settingsContent,
+    settingsFrame = settingsFrame,
+    settingsCloseBtn = settingsCloseBtn,
+    settingsBtn = settingsBtn,
+    minimizeBtn = minimizeBtn,
+    closeBtn = closeBtn,
+    sidebar = sidebar,
+    contentArea = contentArea,
+    sections = sections,
+    jumpSwitch = jumpSwitch,
+    speedSwitch = speedSwitch,
+    invisibilitySwitch = invisibilitySwitch,
+    unhittableSwitchInstance = unhittableSwitchInstance,
+    resizeSwitchInstance = resizeSwitchInstance,
+    flingSwitchInstance = flingSwitchInstance,
+    playerESPSwitch = _G.playerESPSwitch,
+    plotESPSwitch = _G.plotESPSwitch,
+    serverHopSwitch = serverHopSwitch,
+    disableESP = disableESP,
+    disablePlotESP = disablePlotESP,
+    disablePlotTimeESP = disablePlotTimeESP,
+    enablePlotTimeESP = enablePlotTimeESP,
+    disableHelicopter = disableHelicopter,
+    disableGrappleFlight = disableGrappleFlight,
+    disableInfiniteJump = disableInfiniteJump,
+    disableFloat = disableFloat,
+    disablePlatform = disablePlatform,
+    enablePlatform = enablePlatform,
+    timeSizeLabel = timeSizeLabel,
+    timeSizeFill = timeSizeFill,
+    timeSizeButton = timeSizeButton,
+    timeSizeBar = timeSizeBar,
+    playerColorButton = playerColorButton,
+    plotColorButton = plotColorButton,
+    disablePetSnipe = disablePetSnipe,
+    enablePetSnipe = enablePetSnipe,
+    petSnipeSwitch = petSnipeSwitch,
+    setInvisibility = setInvisibility,
+    findPlayerPlot = findPlayerPlot,
+    getPlayerPlot = function() return playerPlot end,
+    setPlayerPlot = function(v) playerPlot = v end,
+    setActiveSection = function(v) activeSection = v end,
+}
+end -- KenHUB register block 1a
+
+do -- KenHUB register block 1b
+local M = _G.KenHubMid
+if not M or not M.CONFIG then
+    error("[Ken HUB] Block 1a export eksik")
+end
+local CONFIG = M.CONFIG
+local player = M.player
+local username = M.username
+local createSwitch = M.createSwitch
+local createSectionHeader = M.createSectionHeader
+local createNumberInput = M.createNumberInput
+local mainFrame = M.mainFrame
+local screenGui = M.screenGui
+local settingsContent = M.settingsContent
+local settingsFrame = M.settingsFrame
+local settingsCloseBtn = M.settingsCloseBtn
+local settingsBtn = M.settingsBtn
+local minimizeBtn = M.minimizeBtn
+local closeBtn = M.closeBtn
+local sidebar = M.sidebar
+local contentArea = M.contentArea
+local sections = M.sections
+local jumpSwitch = M.jumpSwitch
+local speedSwitch = M.speedSwitch
+local invisibilitySwitch = M.invisibilitySwitch
+local unhittableSwitchInstance = M.unhittableSwitchInstance
+local resizeSwitchInstance = M.resizeSwitchInstance
+local flingSwitchInstance = M.flingSwitchInstance
+local playerESPSwitch = M.playerESPSwitch
+local plotESPSwitch = M.plotESPSwitch
+local serverHopSwitch = M.serverHopSwitch
+local disableESP = M.disableESP
+local disablePlotESP = M.disablePlotESP
+local disablePlotTimeESP = M.disablePlotTimeESP
+local enablePlotTimeESP = M.enablePlotTimeESP
+local disableHelicopter = M.disableHelicopter
+local disableGrappleFlight = M.disableGrappleFlight
+local disableInfiniteJump = M.disableInfiniteJump
+local disableFloat = M.disableFloat
+local disablePlatform = M.disablePlatform
+local enablePlatform = M.enablePlatform
+local timeSizeLabel = M.timeSizeLabel
+local timeSizeFill = M.timeSizeFill
+local timeSizeButton = M.timeSizeButton
+local timeSizeBar = M.timeSizeBar
+local playerColorButton = M.playerColorButton
+local plotColorButton = M.plotColorButton
+local disablePetSnipe = M.disablePetSnipe
+local enablePetSnipe = M.enablePetSnipe
+local petSnipeSwitch = M.petSnipeSwitch
+local setInvisibility = M.setInvisibility
+local findPlayerPlot = M.findPlayerPlot
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
+local LP = player
+
 -- Desync section UI
 createSectionHeader(_G.desyncSection, "Desync Controls")
 _G.mobileDesyncEnabled = false
@@ -6233,7 +6347,7 @@ _G.KenHubBundle = {
 }
 _G.KenHub_createSwitch = createSwitch
 
-end -- KenHUB register block 2
+end -- KenHUB register block 1b
 
 do -- KenHUB register block 3
 local B = _G.KenHubBundle
