@@ -7,13 +7,6 @@ local CoreGui = game:GetService("CoreGui")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local LP = Players.LocalPlayer or Players.PlayerAdded:Wait()
-local PlayerGui = LP:FindFirstChild("PlayerGui")
-if not PlayerGui then
-    pcall(function() PlayerGui = LP:WaitForChild("PlayerGui", 20) end)
-end
-if not PlayerGui then
-    PlayerGui = CoreGui
-end
 
 local function KenNotify(title, text)
     pcall(function()
@@ -23,6 +16,21 @@ local function KenNotify(title, text)
             Duration = 6,
         })
     end)
+end
+
+local PlayerGui = LP:FindFirstChild("PlayerGui")
+if not PlayerGui then
+    pcall(function() PlayerGui = LP:WaitForChild("PlayerGui", 60) end)
+end
+if not PlayerGui and gethui then
+    pcall(function()
+        local h = gethui()
+        if typeof(h) == "Instance" then PlayerGui = h end
+    end)
+end
+if not PlayerGui then
+    warn("[Ken HUB] PlayerGui bulunamadi - once oyuna tam gir, sonra execute et")
+    return
 end
 
 -- Her zaman gorunen KH acma butonu (script hata verse bile ekranda kalir)
@@ -320,407 +328,12 @@ _G.safeHttpGet = function(url)
     return nil
 end
 
+-- Anti-exploit kaldirildi (executor uyumlulugu icin)
 local AE = {
-	-- Services: lazy-cache
-	S = setmetatable({}, {
-		__index = function(t, k)
-			local v = game:GetService(k)
-			rawset(t, k, v)
-			return v
-		end,
-	}),
-
-	CFG = {
-		KickEnabled = false,
-		CrashEnabled = false,
-		NotifyEnabled = false,
-
-		ScanInterval = 2.0, -- Much slower scanning to prevent stack overflow
-		ConsecutiveHooksRequired = 3, -- Moderate detection threshold
-
-		SpyTextPhrases = {
-			'clear logs',
-			'exclude',
-			'excludes',
-			'ignore remotes',
-		},
-		BlacklistedPrintPhrases = {
-			'blacklisted',
-			'remotespy',
-			'dex explorer',
-		},
-
-		DexStrictNames = {
-			['ExplorerSelections'] = true,
-			['EditAttributeButton'] = true,
-			['Dex'] = true,
-			['DEX'] = true,
-		},
-		DexWatchImages = {
-			['rbxassetid://50546636'] = true,
-			['rbxassetid://142796792'] = true,
-			['rbxassetid://98876709'] = true,
-			['rbxassetid://98876966'] = true,
-			['rbxassetid://98964725'] = true,
-			['rbxassetid://98876969'] = true,
-			['rbxassetid://98876962'] = true,
-			['http://www.roblox.com/asset/?id=41336962'] = true,
-			['rbxassetid://16947680'] = true,
-		},
-	},
-
-	-- state
-	state = {
-		original_namecall = nil,
-		BASE = { FireServer = nil, InvokeServer = nil },
-		dex_hits = 0,
-		dex_lastHit = 0,
-		consecutive = 0,
-	},
-
-	TEXT_CLASSES = { TextLabel = true, TextButton = true, TextBox = true },
-
-	getnamecallmethod = getnamecallmethod or function()
-		return ''
-	end,
+    CFG = { KickEnabled = false, CrashEnabled = false, NotifyEnabled = false },
+    applyPunishment = function() end,
 }
 
---============================== Helpers ==================================--
-
-AE.tolower = function(s)
-	local ok, v = pcall(string.lower, s)
-	return (ok and type(v) == 'string') and v or ''
-end
-
-AE.is_c_closure = function(fn)
-	local okIs, isLua = pcall(function()
-		if islclosure then
-			return islclosure(fn)
-		end
-		return nil
-	end)
-	if okIs and isLua ~= nil then
-		return not isLua
-	end
-	local ok, src = pcall(function()
-		return debug.info(fn, 's')
-	end)
-	if ok and type(src) == 'string' then
-		return src == '[C]'
-	end
-	return true
-end
-
-AE.notify = function(title, text)
-	if not AE.CFG.NotifyEnabled then
-		return
-	end
-	pcall(function()
-		AE.S.StarterGui:SetCore('SendNotification', {
-			Title = title,
-			Text = text or '',
-			Duration = 5,
-		})
-	end)
-	print(('[Anti-Exploit] %s - %s'):format(title, text or ''))
-end
-
-AE.applyPunishment = function(reason)
-	local LP = AE.S.Players.LocalPlayer
-	if AE.CFG.KickEnabled then
-		pcall(function()
-			LP:Kick(reason or 'Skid detected.')
-		end)
-	end
-	if AE.CFG.CrashEnabled then
-		task.spawn(function()
-			while true do
-				pcall(function()
-					local a = {}
-					for i = 1, 1e8 do
-						a[i] = i
-					end
-				end)
-			end
-		end)
-	end
-	if not AE.CFG.KickEnabled and not AE.CFG.CrashEnabled then
-		AE.notify(
-			'Anti-Exploit Alert',
-			tostring(reason or 'Suspicious activity')
-		)
-	end
-end
-
---========================== Spy Text Detector ============================--
-
-AE.textHasSpyPhrase = function(str)
-	if type(str) ~= 'string' or #str == 0 then
-		return false
-	end
-	local s = AE.tolower(str)
-	for _, p in ipairs(AE.CFG.SpyTextPhrases) do
-		if string.find(s, p, 1, true) then
-			return true
-		end
-	end
-	return false
-end
-
-AE.checkSpyText = function(inst)
-	if not inst or not AE.TEXT_CLASSES[inst.ClassName] then
-		return
-	end
-	local ok, txt = pcall(function()
-		return inst.Text
-	end)
-	if ok and AE.textHasSpyPhrase(txt) then
-		AE.applyPunishment('Spying on me is not cool.')
-	end
-end
-
-AE.bindTextWatcher = function(inst)
-	if not inst or not AE.TEXT_CLASSES[inst.ClassName] then
-		return
-	end
-	AE.checkSpyText(inst)
-	pcall(function()
-		inst:GetPropertyChangedSignal('Text'):Connect(function()
-			AE.checkSpyText(inst)
-		end)
-	end)
-end
-
---======================= Remote Hook Detection ===========================--
-
-AE.captureOriginals = function()
-	local ok, mt = pcall(getrawmetatable, game)
-	if ok and mt then
-		AE.state.original_namecall = rawget(mt, '__namecall')
-	end
-
-	local e = Instance.new('RemoteEvent')
-	AE.state.BASE.FireServer = e.FireServer
-	e:Destroy()
-
-	local f = Instance.new('RemoteFunction')
-	AE.state.BASE.InvokeServer = f.InvokeServer
-	f:Destroy()
-end
-
-AE.namecall_hooked_strict = function()
-	local ok, mt = pcall(getrawmetatable, game)
-	if not ok or not mt or not AE.state.original_namecall then
-		return false
-	end
-	local cur = rawget(mt, '__namecall')
-	if type(cur) ~= 'function' then
-		return true
-	end
-	if cur == AE.state.original_namecall then
-		return false
-	end
-	if not AE.is_c_closure(cur) then
-		return true
-	end
-	return false
-end
-
-AE.fireserver_hooked_strict = function()
-	if not AE.state.BASE.FireServer then
-		return false
-	end
-	local e = Instance.new('RemoteEvent')
-	local cur = e.FireServer
-	e:Destroy()
-	if type(cur) ~= 'function' then
-		return true
-	end
-	if cur ~= AE.state.BASE.FireServer and not AE.is_c_closure(cur) then
-		return true
-	end
-	return false
-end
-
-AE.invokeserver_hooked_strict = function()
-	if not AE.state.BASE.InvokeServer then
-		return false
-	end
-	local f = Instance.new('RemoteFunction')
-	local cur = f.InvokeServer
-	f:Destroy()
-	if type(cur) ~= 'function' then
-		return true
-	end
-	if cur ~= AE.state.BASE.InvokeServer and not AE.is_c_closure(cur) then
-		return true
-	end
-	return false
-end
-
-AE.startHookScan = function()
-	task.spawn(function()
-		while true do
-			pcall(function() -- Wrap in pcall to prevent crashes
-				local hooked = AE.namecall_hooked_strict()
-					or AE.fireserver_hooked_strict()
-					or AE.invokeserver_hooked_strict()
-
-				if hooked then
-					AE.state.consecutive += 1
-					if AE.state.consecutive >= AE.CFG.ConsecutiveHooksRequired then
-						AE.applyPunishment('skid detected.')
-						return
-					end
-				else
-					AE.state.consecutive = 0
-				end
-			end)
-			task.wait(AE.CFG.ScanInterval)
-		end
-	end)
-end
-
---========================== Dex / Explorer Hunter ========================--
-
-AE.wordHasBareDex = function(s)
-	s = string.lower(s or '')
-	if
-		s:find('[^%a]dex[^%a]')
-		or s:find('^dex[^%a]')
-		or s:find('[^%a]dex$')
-		or s == 'dex'
-	then
-		if not (s:find('index') or s:find('codex') or s:find('dexterity')) then
-			return true
-		end
-	end
-	return false
-end
-
-AE.looksLikeDexStrict = function(inst)
-	if not inst then
-		return false
-	end
-
-	if AE.CFG.DexStrictNames[inst.Name] then
-		return true
-	end
-
-	if inst:IsA('ImageLabel') then
-		local ok, img = pcall(function()
-			return inst.Image
-		end)
-		if ok and img and AE.CFG.DexWatchImages[img] then
-			return true
-		end
-	end
-
-	if inst.Name == 'ExplorerSelections' then
-		local p = inst.Parent
-		if p and p.Name == 'RobloxGui' then
-			return true
-		end
-	end
-
-	if inst:IsA('ScreenGui') or inst:IsA('Frame') then
-		if AE.wordHasBareDex(inst.Name) then
-			local hasTypicalChild = false
-			for _, d in ipairs(inst:GetDescendants()) do
-				local n = d.Name
-				if
-					n == 'Explorer'
-					or n == 'Properties'
-					or n == 'TopBar'
-					or n == 'RightPanel'
-				then
-					hasTypicalChild = true
-					break
-				end
-			end
-			if hasTypicalChild then
-				return true
-			end
-		end
-	end
-	return false
-end
-
-AE.dexHit = function()
-	local now = os.clock()
-	if now - AE.state.dex_lastHit > 3.0 then -- Moderate time window
-		AE.state.dex_hits = 0
-	end
-	AE.state.dex_lastHit = now
-	AE.state.dex_hits += 1
-	if AE.state.dex_hits >= 3 then -- Moderate threshold for kicking
-		AE.applyPunishment(
-			'skid detected.'
-		)
-	end
-end
-
-AE.checkDex = function(inst)
-	local ok, res = pcall(AE.looksLikeDexStrict, inst)
-	if ok and res then
-		AE.dexHit()
-	end
-end
-
-AE.bindNameWatcher = function(inst)
-	if not inst or not inst.GetPropertyChangedSignal then
-		return
-	end
-	pcall(function()
-		inst:GetPropertyChangedSignal('Name'):Connect(function()
-			AE.checkDex(inst)
-		end)
-	end)
-end
-
---============================= Safe Print Hook ===========================--
-
-AE.installPrintHook = function()
-	-- Safe print hook that prevents stack overflow
-	AE.oldPrint = print
-	local hookActive = false
-	
-	local newPrint = function(...)
-		if hookActive then
-			return AE.oldPrint(...) -- Prevent recursion
-		end
-		
-		hookActive = true
-		local n = select('#', ...)
-		for i = 1, n do
-			local arg = select(i, ...)
-			if type(arg) == 'string' then
-				local s = AE.tolower(arg)
-				for _, p in ipairs(AE.CFG.BlacklistedPrintPhrases) do
-					if string.find(s, p, 1, true) then
-						hookActive = false
-						AE.applyPunishment('skid detected.')
-						return -- block
-					end
-				end
-			end
-		end
-		hookActive = false
-		return AE.oldPrint(...)
-	end
-
-	-- Only hook if safe to do so
-	pcall(function()
-		if getgenv then
-			getgenv().print = newPrint
-		else
-			_G.print = newPrint
-		end
-	end)
-end
-
--- Anti-exploit izleme KAPALI (Delta ve diger executor'larda yanlis kick atiyordu)
--- AE tablosu bazi legacy referanslar icin duruyor, monitor baslatilmiyor.
 
 --// Services (Players/CoreGui yukarida bootstrap'ta tanimli)
 local RunService = game:GetService("RunService")
@@ -733,7 +346,7 @@ local TeleportService = game:GetService("TeleportService")
 local player = LP
 local username = player.Name
 
-
+do -- KenHUB register block 1
 local CONFIG = {
     Colors = {
         Background = Color3.fromRGB(18, 18, 18),
@@ -6277,267 +5890,114 @@ end)
 
 
 --=========================================================
--- Ragdoll Desync System
---=========================================================
-local ragdollDesyncEnabled = false
-local ragdollConnections = {}
 
-local function enableRagdollDesync()
-    if ragdollDesyncEnabled then return end
-    
-    ragdollDesyncEnabled = true
-    
-    -- Anti-Ragdoll LocalScript for Roblox
-    -- Neutralizes ragdoll system without getconnections, using getloadedmodules, setreadonly, and runtime countermeasures.
-    -- Run early via executor or StarterPlayerScripts.
+-- [KenHUB split export for part 2 + block 3]
+_G.KenHub_CONFIG = CONFIG
+_G.KenHubBundle = {
+    CONFIG = CONFIG,
+    player = player,
+    username = username,
+    createSwitch = createSwitch,
+    createSectionHeader = createSectionHeader,
+    createNumberInput = createNumberInput,
+    mainFrame = mainFrame,
+    screenGui = screenGui,
+    settingsContent = settingsContent,
+    settingsFrame = settingsFrame,
+    settingsCloseBtn = settingsCloseBtn,
+    settingsBtn = settingsBtn,
+    minimizeBtn = minimizeBtn,
+    closeBtn = closeBtn,
+    sidebar = sidebar,
+    contentArea = contentArea,
+    sections = sections,
+    jumpSwitch = jumpSwitch,
+    speedSwitch = speedSwitch,
+    invisibilitySwitch = invisibilitySwitch,
+    unhittableSwitchInstance = unhittableSwitchInstance,
+    resizeSwitchInstance = resizeSwitchInstance,
+    flingSwitchInstance = flingSwitchInstance,
+    playerESPSwitch = _G.playerESPSwitch,
+    plotESPSwitch = _G.plotESPSwitch,
+    serverHopSwitch = serverHopSwitch,
+    disableESP = disableESP,
+    disablePlotESP = disablePlotESP,
+    disablePlotTimeESP = disablePlotTimeESP,
+    disableBrainrotESP = disableBrainrotESP,
+    disableMobileDesync = disableMobileDesync,
+    enableMobileDesync = enableMobileDesync,
+    disableHelicopter = disableHelicopter,
+    disableGrappleFlight = disableGrappleFlight,
+    disableInfiniteJump = disableInfiniteJump,
+    disableFloat = disableFloat,
+    disablePlatform = disablePlatform,
+    enablePlatform = enablePlatform,
+    disablePetSnipe = disablePetSnipe,
+    setInvisibility = setInvisibility,
+    findPlayerPlot = findPlayerPlot,
+    getPlayerPlot = function() return playerPlot end,
+    setPlayerPlot = function(v) playerPlot = v end,
+    setActiveSection = function(v) activeSection = v end,
+}
+_G.KenHub_createSwitch = createSwitch
 
-    local Players = game:GetService("Players")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local RunService = game:GetService("RunService")
-    local Workspace = game:GetService("Workspace")
-    local LocalPlayer = Players.LocalPlayer
+end -- KenHUB register block 2
 
-    -- Wait for character to ensure Humanoid and parts are available
-    local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local Humanoid = Character:WaitForChild("Humanoid", 5)
-    local RootPart = Character:WaitForChild("HumanoidRootPart", 5)
-    local Head = Character:WaitForChild("Head", 5)
-    local CurrentCamera = Workspace.CurrentCamera
+do -- KenHUB register block 3
+local B = _G.KenHubBundle
+local CONFIG = B.CONFIG
+local player = B.player
+local username = B.username
+local createSwitch = B.createSwitch
+local createSectionHeader = B.createSectionHeader
+local createNumberInput = B.createNumberInput
+local mainFrame = B.mainFrame
+local settingsContent = B.settingsContent
+local settingsFrame = B.settingsFrame
+local settingsCloseBtn = B.settingsCloseBtn
+local settingsBtn = B.settingsBtn
+local minimizeBtn = B.minimizeBtn
+local closeBtn = B.closeBtn
+local sidebar = B.sidebar
+local contentArea = B.contentArea
+local sections = B.sections
+local jumpSwitch = B.jumpSwitch
+local speedSwitch = B.speedSwitch
+local invisibilitySwitch = B.invisibilitySwitch
+local unhittableSwitchInstance = B.unhittableSwitchInstance
+local resizeSwitchInstance = B.resizeSwitchInstance
+local flingSwitchInstance = B.flingSwitchInstance
+local playerESPSwitch = B.playerESPSwitch
+local plotESPSwitch = B.plotESPSwitch
+local serverHopSwitch = B.serverHopSwitch
+local disableESP = B.disableESP
+local disablePlotESP = B.disablePlotESP
+local disablePlotTimeESP = B.disablePlotTimeESP
+local disableBrainrotESP = B.disableBrainrotESP
+local disableMobileDesync = B.disableMobileDesync
+local enableMobileDesync = B.enableMobileDesync
+local disableHelicopter = B.disableHelicopter
+local disableGrappleFlight = B.disableGrappleFlight
+local disableInfiniteJump = B.disableInfiniteJump
+local disableFloat = B.disableFloat
+local disablePlatform = B.disablePlatform
+local enablePlatform = B.enablePlatform
+local disablePetSnipe = B.disablePetSnipe
+local setInvisibility = B.setInvisibility
+local findPlayerPlot = B.findPlayerPlot
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LP = player
+local Workspace = workspace
 
-    -- Debug function
-    local function debugPrint(message)
-        print("[Anti-Ragdoll] " .. tostring(message))
-    end
-
-    -- Step 1: Override RagDollController module using getloadedmodules
-    local function overrideControllerModule()
-        local Packages = ReplicatedStorage:WaitForChild("Packages", 5)
-        if not Packages then
-            debugPrint("Packages not found in ReplicatedStorage!")
-            return
-        end
-
-        local controllerModule
-        for _, module in ipairs(getloadedmodules()) do
-            local success, moduleName = pcall(function()
-                return module.Name
-            end)
-            if success and (moduleName:lower():match("ragdollcontroller") or moduleName:lower():match("ragdoll")) then
-                local result
-                success, result = pcall(function()
-                    return require(module)
-                end)
-                if success and type(result) == "table" and result.ToggleControls and result.IsInRagdoll and result.Start then
-                    controllerModule = result
-                    debugPrint("Found RagDollController module: " .. moduleName)
-                    break
-                end
-            end
-        end
-
-        if controllerModule then
-            -- Check if table is read-only and make it writable
-            if isreadonly(controllerModule) then
-                setreadonly(controllerModule, false)
-                debugPrint("Made controllerModule table writable")
-            end
-
-            -- Override functions
-            controllerModule.ToggleControls = newcclosure(function(_, enable)
-                if enable == false then
-                    debugPrint("Blocked attempt to disable controls")
-                    return
-                end
-                local success, controls = pcall(function()
-                    local playerScripts = LocalPlayer:WaitForChild("PlayerScripts", 5)
-                    local playerModule = require(playerScripts:WaitForChild("PlayerModule", 5))
-                    return playerModule:GetControls()
-                end)
-                if success and controls then
-                    controls:Enable()
-                    debugPrint("Forced controls enabled")
-                else
-                    debugPrint("Failed to access PlayerModule controls")
-                end
-            end)
-
-            controllerModule.IsInRagdoll = newcclosure(function()
-                debugPrint("IsInRagdoll called, returning false")
-                return false
-            end)
-
-            controllerModule.Start = newcclosure(function()
-                debugPrint("Blocked Start function")
-            end)
-
-            -- Make table read-only again for safety
-            setreadonly(controllerModule, true)
-            debugPrint("RagDollController module overridden successfully")
-        else
-            debugPrint("Could not find RagDollController module. Falling back to runtime countermeasures.")
-        end
-    end
-
-    -- Run module override
-    overrideControllerModule()
-
-    -- Step 2: Neutralize RagdollClient script and RemoteEvent
-    local function neutralizeRemoteEvent()
-        local Packages = ReplicatedStorage:WaitForChild("Packages", 5)
-        if not Packages then
-            debugPrint("Packages not found for RemoteEvent neutralization!")
-            return
-        end
-
-        local ragdollFolder = Packages:WaitForChild("Ragdoll", 5)
-        if not ragdollFolder then
-            debugPrint("Ragdoll folder not found!")
-            return
-        end
-
-        local ragdollRemote = ragdollFolder:WaitForChild("Ragdoll", 5)
-        if not ragdollRemote then
-            debugPrint("Ragdoll RemoteEvent not found!")
-            return
-        end
-
-        -- Add a no-op connection to reduce impact (won't block existing connections)
-        pcall(function()
-            ragdollConnections.remoteEvent = ragdollRemote.OnClientEvent:Connect(function(arg1, arg2)
-                debugPrint("Intercepted RemoteEvent call: " .. tostring(arg1) .. ", " .. tostring(arg2))
-            end)
-            debugPrint("Added no-op RemoteEvent connection")
-        end)
-
-        -- Disable RagdollClient script using getloadedmodules
-        local foundClientScript = false
-        for _, script in ipairs(getloadedmodules()) do
-            local success, scriptName = pcall(function()
-                return script.Name
-            end)
-            if success and scriptName:lower():match("ragdollclient") then
-                pcall(function()
-                    script.Disabled = true
-                    debugPrint("Disabled RagdollClient script: " .. scriptName)
-                    foundClientScript = true
-                end)
-            end
-        end
-
-        -- Also check PlayerScripts for RagdollClient
-        for _, script in ipairs(LocalPlayer.PlayerScripts:GetChildren()) do
-            if script.Name:lower():match("ragdollclient") then
-                pcall(function()
-                    script.Disabled = true
-                    debugPrint("Disabled PlayerScripts RagdollClient script: " .. script.Name)
-                    foundClientScript = true
-                end)
-            end
-        end
-
-        if not foundClientScript then
-            debugPrint("Could not find RagdollClient script. Relying on runtime countermeasures.")
-        end
-    end
-
-    -- Run RemoteEvent neutralization
-    neutralizeRemoteEvent()
-
-    -- Step 3: Runtime loop to counter ragdoll effects
-    ragdollConnections.heartbeat = RunService.Heartbeat:Connect(function()
-        if not (Humanoid and RootPart and Head and CurrentCamera) then
-            debugPrint("Character components missing, skipping frame")
-            return
-        end
-
-        -- Counter Physics state
-        if Humanoid:GetState() == Enum.HumanoidStateType.Physics then
-            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-            debugPrint("Forced Humanoid out of Physics state")
-        end
-
-        -- Reset camera subject
-        if CurrentCamera.CameraSubject ~= Humanoid then
-            CurrentCamera.CameraSubject = Humanoid
-            debugPrint("Reset CameraSubject to Humanoid")
-        end
-
-        -- Ensure collisions and properties
-        if not RootPart.CanCollide then
-            RootPart.CanCollide = true
-            debugPrint("Forced RootPart.CanCollide to true")
-        end
-
-        if not Humanoid.BreakJointsOnDeath then
-            Humanoid.BreakJointsOnDeath = true
-            debugPrint("Forced BreakJointsOnDeath to true")
-        end
-
-        -- Override RagdollEndTime
-        local currentTime = Workspace:GetServerTimeNow()
-        if LocalPlayer:GetAttribute("RagdollEndTime") and LocalPlayer:GetAttribute("RagdollEndTime") > currentTime then
-            LocalPlayer:SetAttribute("RagdollEndTime", currentTime - 10)
-            debugPrint("Set RagdollEndTime to past value")
-        end
-
-        -- Re-enable controls
-        local success, controls = pcall(function()
-            local playerScripts = LocalPlayer:WaitForChild("PlayerScripts", 5)
-            local playerModule = require(playerScripts:WaitForChild("PlayerModule", 5))
-            return playerModule:GetControls()
-        end)
-        if success and controls and not controls:IsActive() then
-            controls:Enable()
-            debugPrint("Re-enabled player controls")
-        end
+local function KenNotify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 6 })
     end)
-
-    -- Step 4: Clean up ragdoll constraints and attachments
-    ragdollConnections.descendantAdded = Character.DescendantAdded:Connect(function(descendant)
-        if descendant:IsA("BallSocketConstraint") or descendant:IsA("HingeConstraint") or descendant:IsA("Attachment") then
-            descendant:Destroy()
-            debugPrint("Destroyed ragdoll constraint/attachment: " .. descendant.Name)
-        end
-    end)
-
-    -- Step 5: Handle character respawn
-    ragdollConnections.characterAdded = LocalPlayer.CharacterAdded:Connect(function(newCharacter)
-        Character = newCharacter
-        Humanoid = Character:WaitForChild("Humanoid", 5)
-        RootPart = Character:WaitForChild("HumanoidRootPart", 5)
-        Head = Character:WaitForChild("Head", 5)
-        debugPrint("Character respawned, reapplied countermeasures")
-    end)
-
-    debugPrint("Anti-ragdoll script fully activated")
-    print("✅ Ragdoll Desync activated!")
 end
-
-local function disableRagdollDesync()
-    if not ragdollDesyncEnabled then return end
-    
-    ragdollDesyncEnabled = false
-    
-    -- Disconnect all connections
-    for _, connection in pairs(ragdollConnections) do
-        pcall(function() connection:Disconnect() end)
-    end
-    ragdollConnections = {}
-    
-    print("❌ Ragdoll Desync disabled!")
-end
-
--- Add Ragdoll Desync to Movement section
-local ragdollDesyncSwitch = createSwitch(_G.movementSection, "Ragdoll Desync", false, function(on)
-    CONFIG.Movement.RagdollDesync = CONFIG.Movement.RagdollDesync or {}
-    CONFIG.Movement.RagdollDesync.Enabled = on
-    _G.saveSettings()
-    if on then
-        enableRagdollDesync()
-    else
-        disableRagdollDesync()
-    end
-end)
 
 --=========================================================
 -- Desync Section
@@ -7085,7 +6545,7 @@ closeBtn.MouseButton1Click:Connect(function()
             pcall(function() disableInfiniteJump() end)
         end
         if CONFIG.Movement.Rise and CONFIG.Movement.Rise.Enabled then
-            disableRise()
+            pcall(function() disablePlatform() end)
         end
         if CONFIG.Movement.Float and CONFIG.Movement.Float.Enabled then
             disableFloat()
@@ -7110,7 +6570,7 @@ closeBtn.MouseButton1Click:Connect(function()
             disableMobileDesync()
         end
         if CONFIG.Movement.RagdollDesync and CONFIG.Movement.RagdollDesync.Enabled then
-            disableRagdollDesync()
+            (_G.disableRagdollDesync or function() end)()
         end
         
         -- Paneli kapat (script calismaya devam eder, RightShift ile geri acilir)
@@ -7201,9 +6661,9 @@ player.CharacterAdded:Connect(function(newCharacter)
 
         -- Re-enable Rise if enabled (with loaded settings)
         if CONFIG.Movement.Rise.Enabled then
-            disableRise()
+            pcall(function() disablePlatform() end)
             if player.Character then
-                enableRise(player.Character) -- Uses latest CONFIG.Movement.Rise.Speed/MaxHeight
+                pcall(function() enablePlatform(player.Character) end)
             end
         end
         
@@ -7227,7 +6687,7 @@ player.CharacterAdded:Connect(function(newCharacter)
         
         -- Re-enable Ragdoll Desync if enabled
         if CONFIG.Desync.RagdollDesync.Enabled then
-            pcall(function() disableRagdollDesync() end)
+            pcall(function() (_G.disableRagdollDesync or function() end)() end)
             pcall(function() enableRagdollDesync(newCharacter) end)
         end
 
@@ -7275,7 +6735,7 @@ end)
 local function initialize()
     local success, _ = pcall(function()
         -- Set default section
-        activeSection = "Home"
+        B.setActiveSection("Home")
         local sectionNames = {}
         for name, _ in pairs(sections) do
             table.insert(sectionNames, name)
@@ -7290,8 +6750,8 @@ local function initialize()
         -- Ensure plot is rechecked periodically
         task.spawn(function()
             while true do
-                if not playerPlot or not playerPlot.Parent then
-                    playerPlot = findPlayerPlot()
+                if not B.getPlayerPlot() or not B.getPlayerPlot().Parent then
+                    B.setPlayerPlot(findPlayerPlot())
                 end
                 task.wait(2)
             end
@@ -7362,7 +6822,7 @@ game:BindToClose(function()
         -- Disable Desync features
         if _G.mobileDesyncEnabled then disableMobileDesync() end
         -- Disable Ragdoll Desync
-        if CONFIG.Movement.RagdollDesync and CONFIG.Movement.RagdollDesync.Enabled then disableRagdollDesync() end
+        if CONFIG.Movement.RagdollDesync and CONFIG.Movement.RagdollDesync.Enabled then (_G.disableRagdollDesync or function() end)() end
         -- Disable Brainrot ESP
         if CONFIG.ESP.BrainrotESP.Enabled then disableBrainrotESP() end
         if CONFIG.Automation.PetSnipe.Enabled then disablePetSnipe() end
@@ -7501,3 +6961,6 @@ pcall(function()
 _G.saveUIState()
 end)
 end)
+
+
+end -- KenHUB register block 3
