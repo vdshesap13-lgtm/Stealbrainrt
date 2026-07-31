@@ -49,6 +49,8 @@ local State = {
 	autoPickupActive = false,
 	instantPromptActive = false,
 	autoBuyBombs = false,
+	infBackpack = false,
+	infDamage = false,
 	minValue = 2000000,
 	valueFilter = true,
 	espScale = 0.7,
@@ -617,7 +619,7 @@ local function hasActiveRune(keyword)
 end
 
 local function backpackCapacity()
-	if LocalPlayer:GetAttribute("InfBackpack") == true then
+	if State.infBackpack or LocalPlayer:GetAttribute("InfBackpack") == true then
 		return math.huge
 	end
 
@@ -4944,6 +4946,7 @@ do
 		local SURFACE_GAP = 0.15
 		local COLUMN_DRY = 25
 		local DIG_BURST = 7
+		local DIG_BURST_INF = 64
 		local DIG_SINK = 1.2
 		local DIG_LIFT = 6
 		local EQUIP_STEP = 0.5
@@ -4956,6 +4959,7 @@ do
 		local COLLECT_GAP = 0.15
 		local GRAB_GAP = 0.05
 		local MAX_LOOT_TIME = 4.0
+		local INF_DIG_POWER = 1e9
 
 		local OFFSETS = { Vector2.new(0, 0) }
 		local PEAK_OFFSETS = { Vector2.new(0, 0) }
@@ -5050,6 +5054,7 @@ do
 		local farmValueFilter = minFarmValue > 0
 		local autoPlantLuck = false
 		local plantClock = 0
+		local savedDigPower = nil
 		local heldPick
 		local loot
 		local lootClock = 0
@@ -5219,22 +5224,37 @@ do
 			return Move.glide(goal, aim)
 		end
 
+		local function applyInfDamage(pick)
+			if not pick or not State.infDamage then
+				return
+			end
+			if savedDigPower == nil then
+				savedDigPower = getAttr(pick, "DigPower")
+			end
+			pcall(function()
+				pick:SetAttribute("DigPower", INF_DIG_POWER)
+			end)
+		end
+
 		local function swing(spot)
 			local event = Remotes.DigRequest
 			if not event or not heldPick then
 				return false
 			end
 
+			applyInfDamage(heldPick)
+
 			local name = heldPick.Name
 			local root = getRoot()
 			local aim = spot
+			local burst = State.infDamage and DIG_BURST_INF or DIG_BURST
 
 			if root then
 				aim = aimPoint(root.Position, spot, pickReach(heldPick), os.clock()) or spot
 			end
 
 			return pcall(function()
-				for step = 0, DIG_BURST - 1 do
+				for step = 0, burst - 1 do
 					fireRemote(event, name, aim - Vector3.new(0, step * DIG_SINK, 0))
 				end
 			end)
@@ -5390,6 +5410,18 @@ do
 			return best, blocked
 		end
 
+		local function restoreDigPower()
+			if heldPick and savedDigPower ~= nil then
+				local restore = savedDigPower
+				savedDigPower = nil
+				pcall(function()
+					heldPick:SetAttribute("DigPower", restore)
+				end)
+			else
+				savedDigPower = nil
+			end
+		end
+
 		local function stop()
 			active = false
 			target = nil
@@ -5413,6 +5445,7 @@ do
 			plantPhase = "idle"
 			plantPhaseClock = 0
 			plantReturnCFrame = nil
+			restoreDigPower()
 			heldPick = nil
 			statusText = "Idle"
 
@@ -5613,7 +5646,7 @@ do
 			end
 
 			swingClock += deltaTime
-			local swingNeed = math.max(0.02, Farm.swingGap(heldPick) * 0.4)
+			local swingNeed = State.infDamage and 0.02 or math.max(0.02, Farm.swingGap(heldPick) * 0.4)
 			local canSwing = swingClock >= swingNeed
 			local free = backpackFree()
 
@@ -5823,6 +5856,32 @@ do
 			Numeric = false,
 			Finished = false,
 			Callback = setFarmMinValue,
+		})
+
+		MoneyBox:AddDivider()
+
+		MoneyBox:AddToggle("FarmInfDamage", {
+			Text = "Unlimited Damage",
+			Default = false,
+			Callback = function(value)
+				State.infDamage = value
+				if not value then
+					restoreDigPower()
+				end
+			end,
+		})
+
+		MoneyBox:AddToggle("FarmInfBackpack", {
+			Text = "Unlimited Backpack",
+			Default = false,
+			Callback = function(value)
+				State.infBackpack = value
+				pcall(function()
+					LocalPlayer:SetAttribute("InfBackpack", value or nil)
+				end)
+				loot = nil
+				updateBackpackLabel()
+			end,
 		})
 
 		MoneyBox:AddDivider()
