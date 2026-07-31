@@ -4946,7 +4946,7 @@ do
 		local SURFACE_GAP = 0.15
 		local COLUMN_DRY = 25
 		local DIG_BURST = 7
-		local DIG_BURST_INF = 64
+		local DIG_BURST_BOOST = 14
 		local DIG_SINK = 1.2
 		local DIG_LIFT = 6
 		local EQUIP_STEP = 0.5
@@ -4959,7 +4959,7 @@ do
 		local COLLECT_GAP = 0.15
 		local GRAB_GAP = 0.05
 		local MAX_LOOT_TIME = 4.0
-		local INF_DIG_POWER = 1e9
+		local MAX_DIG_POWER = 50000000
 
 		local OFFSETS = { Vector2.new(0, 0) }
 		local PEAK_OFFSETS = { Vector2.new(0, 0) }
@@ -5228,11 +5228,15 @@ do
 			if not pick or not State.infDamage then
 				return
 			end
+			local current = tonumber(getAttr(pick, "DigPower"))
 			if savedDigPower == nil then
-				savedDigPower = getAttr(pick, "DigPower")
+				savedDigPower = current
+			end
+			if current == MAX_DIG_POWER then
+				return
 			end
 			pcall(function()
-				pick:SetAttribute("DigPower", INF_DIG_POWER)
+				pick:SetAttribute("DigPower", MAX_DIG_POWER)
 			end)
 		end
 
@@ -5247,7 +5251,7 @@ do
 			local name = heldPick.Name
 			local root = getRoot()
 			local aim = spot
-			local burst = State.infDamage and DIG_BURST_INF or DIG_BURST
+			local burst = State.infDamage and DIG_BURST_BOOST or DIG_BURST
 
 			if root then
 				aim = aimPoint(root.Position, spot, pickReach(heldPick), os.clock()) or spot
@@ -5646,7 +5650,12 @@ do
 			end
 
 			swingClock += deltaTime
-			local swingNeed = State.infDamage and 0.02 or math.max(0.02, Farm.swingGap(heldPick) * 0.4)
+			local swingNeed
+			if State.infDamage then
+				swingNeed = math.max(0.05, Farm.swingGap(heldPick) * 0.25)
+			else
+				swingNeed = math.max(0.02, Farm.swingGap(heldPick) * 0.4)
+			end
 			local canSwing = swingClock >= swingNeed
 			local free = backpackFree()
 
@@ -5861,11 +5870,13 @@ do
 		MoneyBox:AddDivider()
 
 		MoneyBox:AddToggle("FarmInfDamage", {
-			Text = "Unlimited Damage",
+			Text = "Max Dig Power (50m)",
 			Default = false,
 			Callback = function(value)
 				State.infDamage = value
-				if not value then
+				if value and heldPick then
+					applyInfDamage(heldPick)
+				elseif not value then
 					restoreDigPower()
 				end
 			end,
